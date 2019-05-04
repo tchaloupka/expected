@@ -1,0 +1,5 @@
+name "expected"
+description "Implementation of expected idiom for D"
+authors "Tomáš Chaloupka"
+copyright "Copyright © 2019, Tomáš Chaloupka"
+license "BSL-1.0"
