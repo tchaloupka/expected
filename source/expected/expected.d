@@ -1,10 +1,39 @@
 /++
-TODO: docs
+This module is implementing the Expected idiom.
+
+See the (Andrei Alexandrescu’s talk (Systematic Error Handling in C++)[http://channel9.msdn.com/Shows/Going+Deep/C-and-Beyond-2012-Andrei-Alexandrescu-Systematic-Error-Handling-in-C]
+and (its slides)[https://skydrive.live.com/?cid=f1b8ff18a2aec5c5&id=F1B8FF18A2AEC5C5!1158].
+
+Or more recent ["Expect the Expected"](https://www.youtube.com/watch?v=nVzgkepAg5Y) by Andrei Alexandrescu for further background.
+
+It is also inspired by C++'s proposed [std::expected](https://wg21.link/p0323).
+
+Similar work is (expectations)[http://code.dlang.org/packages/expectations] by Paul Backus.
+
+Main differences with that are:
+
+* lightweight, no other external dependencies
+* allows to use same types for `T` and `E`
+* provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
+
+License: BSL-1.0
+Author: Tomáš Chaloupka
 +/
+
+//TODO: unwrap a unexpect?
+//TODO: map, bind, then
+//TODO: equal, hash
+//TODO: catchError
+//TODO: swap
+//TODO: collect - wraps the method with try/catch end returns Expected: see https://dlang.org/phobos/std_exception.html#collectException
+//      or maybe use then or expected for that and behave based on the result type and nothrow
+//TODO: collect errno function call - see https://dlang.org/phobos/std_exception.html#ErrnoException
+//TODO: usage examples
+//TODO: ability to enforce error handling (via refcounted payload)
 
 module expected;
 
-version (unittest) import std.exception;
+version (unittest) import std.exception : assertThrown;
 
 @safe:
 
@@ -24,17 +53,27 @@ struct Expected(T, E = string, Hook = Abort)
 	import std.functional: forward;
 	import std.meta : AliasSeq, Erase, NoDuplicates;
 	import std.traits: hasElaborateDestructor, isAssignable, isCopyable, Unqual;
+	import std.typecons : Flag, No, Yes;
 
 	alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
 
 	static foreach (i, T; Types)
 	{
-		/// Constructs an `Expected` with value or error based on the used type.
+		/++
+			Constructs an `Expected` with value or error based on the tye of the provided.
+
+			In case when `T == E`, it constructs `Expected` with value.
+
+			In case when `T == void`, it constructs `Expected` with error value.
+
+			Default constructor (if enabled) initializez `Expected` to `T.init` value.
+			If `T == void`, it initializes `Expected` with no error.
+		+/
 		this()(auto ref T val)
 		{
 			static if (isCopyable!T) storage = Storage(val);
 			else storage = Storage(forward!val);
-			updateState!T();
+			setState!(T, Yes.force)();
 		}
 
 		static if (isCopyable!T)
@@ -43,14 +82,14 @@ struct Expected(T, E = string, Hook = Abort)
 			this()(auto ref const(T) val) const
 			{
 				storage = const(Storage)(val);
-				updateState!T();
+				setState!(T, Yes.force)();
 			}
 
 			/// ditto
 			this()(auto ref immutable(T) val) immutable
 			{
 				storage = immutable(Storage)(val);
-				updateState!T();
+				setState!(T, Yes.force)();
 			}
 		}
 		else
@@ -75,7 +114,7 @@ struct Expected(T, E = string, Hook = Abort)
 		{
 			static if (isCopyable!T) storage = Storage(val);
 			else storage = Storage(forward!val);
-			updateState!E(success ? State.value : State.error);
+			setState!E(success ? State.value : State.error);
 		}
 
 		static if (isCopyable!E)
@@ -84,14 +123,14 @@ struct Expected(T, E = string, Hook = Abort)
 			this()(auto ref const(E) val, bool success) const
 			{
 				storage = const(Storage)(val);
-				updateState!E(success ? State.value : State.error);
+				setState!E(success ? State.value : State.error);
 			}
 
 			/// ditto
 			this()(auto ref immutable(E) val, bool success) immutable
 			{
 				storage = immutable(Storage)(val);
-				updateState!E(success ? State.value : State.error);
+				setState!E(success ? State.value : State.error);
 			}
 		}
 		else
@@ -101,10 +140,18 @@ struct Expected(T, E = string, Hook = Abort)
 		}
 	}
 
-	static if (__traits(hasMember, Hook, "disableDefaultConstructor")) @disable this();
+	static if (__traits(hasMember, Hook, "enableDefaultConstructor"))
+	{
+		static assert(
+			is(typeof(__traits(getMember, Hook, "enableDefaultConstructor")) : bool),
+			"Hook's enableDefaultConstructor is expected to be of bool value"
+		);
+		static if (!__traits(getMember, Hook, "enableDefaultConstructor")) @disable this();
+	}
 
 	static foreach (i, CT; Types)
 	{
+		//TODO: Hook to disallow opAssign completely
 		static if (isAssignable!CT)
 		{
 			/// Assigns a value or error to an `Expected`.
@@ -120,8 +167,10 @@ struct Expected(T, E = string, Hook = Abort)
 					}
 				}
 
+				//TODO: Hook to disallow reassign
+
 				storage = Storage(forward!rhs);
-				updateState!CT();
+				setState!CT();
 			}
 		}
 	}
@@ -172,11 +221,6 @@ struct Expected(T, E = string, Hook = Abort)
 		return trustedGetError;
 	}
 
-	//TODO: unwrap a unexpect?
-	//TODO: map, bind, then
-	//TODO: equal, hash
-	//TODO: catchError
-
 	private:
 
 	union Storage
@@ -223,17 +267,22 @@ struct Expected(T, E = string, Hook = Abort)
 	enum State : ubyte { empty, value, error }
 
 	Storage storage;
-	State state;
+	static if (is(T == void)) State state = State.empty;
+	else State state = State.value;
 
-	void updateState(MT)()
+	void setState(MT, Flag!"force" force = No.force)()
 	{
 		State s;
 		static if (Types.length == 1 && is(T == void)) s = State.error;
 		else static if (Types.length == 1 || is(MT == T)) s = State.value;
 		else s = State.error;
 
-		//TODO: change with Hook?
-		assert(state == State.empty || state == s, "Can't change meaning of already set Expected type");
+		static if (!force)
+		{
+			//TODO: change with Hook?
+			assert(state == State.empty || state == s, "Can't change meaning of already set Expected type");
+		}
+
 		state = s;
 	}
 }
@@ -273,24 +322,24 @@ Expected!(T, E) unexpected(T, E)(E value)
 +/
 struct Abort
 {
-	static:
-
+static:
+	immutable bool enableDefaultConstructor = true;
 }
 
 // Expected.init
 @system nothrow unittest
 {
 	auto res = Expected!(int, string).init;
-	assert(!res.hasValue && !res.hasError);
+	assert(res.hasValue && !res.hasError);
 	assert(res);
-	assertThrown!Throwable(res.value);
+	assert(res.value == int.init);
 	assertThrown!Throwable(res.error);
 }
 
 // Default constructor - disabled
 unittest
 {
-	static struct DisableDefaultConstructor { static void disableDefaultConstructor(){} }
+	static struct DisableDefaultConstructor { static immutable bool enableDefaultConstructor = false; }
 	static assert(!__traits(compiles, Expected!(int, string, DisableDefaultConstructor)()));
 }
 
@@ -298,9 +347,9 @@ unittest
 @system nothrow unittest
 {
 	auto res = Expected!(int, string)();
-	assert(!res.hasValue && !res.hasError);
+	assert(res.hasValue && !res.hasError);
 	assert(res);
-	assertThrown!Throwable(res.value);
+	assert(res.value == int.init);
 	assertThrown!Throwable(res.error);
 }
 
@@ -353,8 +402,7 @@ unittest
 
 	// error
 	{
-		auto res = Expected!(int, string).init;
-		res = "42";
+		auto res = Expected!(int, string)("42");
 		assert(!res.hasValue && res.hasError);
 		assert(res.error == "42");
 		res = "foo";
@@ -451,13 +499,20 @@ unittest
 // void payload
 nothrow @nogc unittest
 {
+	alias Exp = Expected!(void, int);
+	static assert (!__traits(hasMember, Exp, "hasValue"));
+	static assert (!__traits(hasMember, Exp, "value"));
+
 	{
-		alias Exp = Expected!(void, int);
+		auto res = Exp();
+		assert(res);
+		assert(!res.hasError);
+	}
+
+	{
 		auto res = Exp(42);
 		assert(!res);
 		assert(res.hasError);
-		static assert (!__traits(hasMember, Exp, "hasValue"));
-		static assert (!__traits(hasMember, Exp, "value"));
 		assert(res.error == 42);
 	}
 }
