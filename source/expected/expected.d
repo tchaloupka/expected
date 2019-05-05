@@ -129,10 +129,13 @@ struct Expected(T, E = string, Hook = Abort)
 	/++ Implicit conversion to bool.
 		Returns: `true` if there is no error set, `false` otherwise.
 	+/
-	bool opCast(T)() const if (is(T == bool)) { return state != State.error; }
+	bool opCast(T)() const if (is(T == bool)) { return !this.hasError; }
 
 	static if (!is(T == void))
 	{
+		/// Checks if `Expected` has value
+		@property bool hasValue()() const { return state == State.value; }
+
 		/++
 			Returns the expected value if there is one. Otherwise, throws an
 			exception or asserts (based on the provided `Hook` implementation).
@@ -154,6 +157,9 @@ struct Expected(T, E = string, Hook = Abort)
 			return trustedGetValue();
 		}
 	}
+
+	/// Checks if `Expected` has error
+	@property bool hasError()() const { return state == State.error; }
 
 	/++
 		Returns the error value. May only be called when `hasValue` returns `false`.
@@ -263,11 +269,19 @@ Expected!(T, E) unexpected(T, E)(E value)
 	else return Expected!(T, E)(value);
 }
 
+/++ TODO
++/
+struct Abort
+{
+	static:
+
+}
+
 // Expected.init
 @system nothrow unittest
 {
 	auto res = Expected!(int, string).init;
-	assert(res.state == Expected!(int, string).State.empty);
+	assert(!res.hasValue && !res.hasError);
 	assert(res);
 	assertThrown!Throwable(res.value);
 	assertThrown!Throwable(res.error);
@@ -284,7 +298,7 @@ unittest
 @system nothrow unittest
 {
 	auto res = Expected!(int, string)();
-	assert(res.state == Expected!(int, string).State.empty);
+	assert(!res.hasValue && !res.hasError);
 	assert(res);
 	assertThrown!Throwable(res.value);
 	assertThrown!Throwable(res.error);
@@ -294,9 +308,9 @@ unittest
 nothrow @nogc unittest
 {
 	auto res = Expected!(int)(42);
-	assert(res.value == 42);
-	assert(res.state == Expected!(int, string).State.value);
 	assert(res);
+	assert(res.hasValue && !res.hasError);
+	assert(res.value == 42);
 	res = 43;
 	assert(res.value == 43);
 }
@@ -308,7 +322,7 @@ nothrow @nogc unittest
 	static assert(is(typeof(Exp.init.value) == const(int)));
 	auto res = Exp(42);
 	assert(res);
-	assert(res.state == Exp.State.value);
+	assert(res.hasValue && !res.hasError);
 	assert(res.value == 42);
 }
 
@@ -319,7 +333,7 @@ unittest
 	static assert(is(typeof(Exp.init.value) == immutable(int)));
 	auto res = Exp(42);
 	assert(res);
-	assert(res.state == Exp.State.value);
+	assert(res.hasValue && !res.hasError);
 	assert(res.value == 42);
 }
 
@@ -331,6 +345,7 @@ unittest
 		auto res = Expected!(int, string).init;
 		res = 42;
 		assert(res);
+		assert(res.hasValue && !res.hasError);
 		assert(res.value == 42);
 		res = 43;
 		assertThrown!Throwable(res = "foo");
@@ -340,6 +355,7 @@ unittest
 	{
 		auto res = Expected!(int, string).init;
 		res = "42";
+		assert(!res.hasValue && res.hasError);
 		assert(res.error == "42");
 		res = "foo";
 		assert(res.error == "foo");
@@ -354,6 +370,7 @@ unittest
 		alias Exp = Expected!(int, int);
 		auto res = Exp(42);
 		assert(res);
+		assert(res.hasValue && !res.hasError);
 		assert(res.value == 42);
 		assertThrown!Throwable(res.error());
 	}
@@ -362,66 +379,72 @@ unittest
 	{
 		alias Exp = Expected!(const(int), int);
 		auto res = Exp(const int(42));
-		assertThrown!Throwable(res.error);
 		auto val = res.value;
 		static assert(is(typeof(val) == const int));
 		assert(res);
+		assert(res.hasValue && !res.hasError);
 		assert(res.value == 42);
+		assertThrown!Throwable(res.error);
 	}
 
 	// const mix
 	{
 		alias Exp = Expected!(const(int), int);
 		auto res = Exp(42);
-		assertThrown!Throwable(res.value);
 		auto err = res.error;
 		static assert(is(typeof(err) == int));
 		assert(!res);
+		assert(!res.hasValue && res.hasError);
 		assert(res.error == 42);
+		assertThrown!Throwable(res.value);
 	}
 
 	// immutable mix
 	{
 		alias Exp = Expected!(immutable(int), int);
 		auto res = Exp(immutable int(42));
-		assertThrown!Throwable(res.error);
 		auto val = res.value;
 		static assert(is(typeof(val) == immutable int));
 		assert(res);
+		assert(res.hasValue && !res.hasError);
 		assert(res.value == 42);
+		assertThrown!Throwable(res.error);
 	}
 
 	// immutable mix
 	{
 		alias Exp = Expected!(immutable(int), int);
 		auto res = Exp(42);
-		assertThrown!Throwable(res.value);
 		auto err = res.error;
 		static assert(is(typeof(err) == int));
 		assert(!res);
+		assert(!res.hasValue && res.hasError);
 		assert(res.error == 42);
+		assertThrown!Throwable(res.value);
 	}
 
 	// immutable mix reverse
 	{
 		alias Exp = Expected!(int, immutable(int));
 		auto res = Exp(immutable int(42));
-		assertThrown!Throwable(res.value);
 		auto err = res.error;
 		static assert(is(typeof(err) == immutable int));
 		assert(!res);
+		assert(!res.hasValue && res.hasError);
 		assert(res.error == 42);
+		assertThrown!Throwable(res.value);
 	}
 
 	// immutable mix reverse
 	{
 		alias Exp = Expected!(int, immutable(int));
 		auto res = Exp(42);
-		assertThrown!Throwable(res.error);
 		auto val = res.value;
 		static assert(is(typeof(val) == int));
 		assert(res);
+		assert(res.hasValue && !res.hasError);
 		assert(res.value == 42);
+		assertThrown!Throwable(res.error);
 	}
 }
 
@@ -432,14 +455,9 @@ nothrow @nogc unittest
 		alias Exp = Expected!(void, int);
 		auto res = Exp(42);
 		assert(!res);
+		assert(res.hasError);
+		static assert (!__traits(hasMember, Exp, "hasValue"));
+		static assert (!__traits(hasMember, Exp, "value"));
 		assert(res.error == 42);
 	}
-}
-
-/++ TODO
-+/
-struct Abort
-{
-	static:
-
 }
