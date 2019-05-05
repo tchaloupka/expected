@@ -25,7 +25,7 @@ d:
   - dmd-beta
 
 script:
-  - dub test --compiler=${DC}
+  - dub test -b unittest-cov --compiler=${DC}
 
 branches:
   only:
