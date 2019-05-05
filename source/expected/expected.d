@@ -21,7 +21,6 @@ License: BSL-1.0
 Author: Tomáš Chaloupka
 +/
 
-//TODO: map, bind, then
 //TODO: collect - wraps the method with try/catch end returns Expected: see https://dlang.org/phobos/std_exception.html#collectException
 //      or maybe use then or expected for that and behave based on the result type and nothrow
 //TODO: collect errno function call - see https://dlang.org/phobos/std_exception.html#ErrnoException
@@ -278,7 +277,7 @@ struct Expected(T, E = string, Hook = Abort)
 			}
 			else
 			{
-				@disable this(const(TC) val) const;
+				@disable this(const(CT) val) const;
 				@disable this(immutable(CT) val) immutable;
 			}
 		}
@@ -360,13 +359,13 @@ class Unexpected(T) : Exception
 /++
 	Creates an `Expected` object from an expected value, with type inference.
 +/
-Expected!(T, E) expected(E = string, Hook = Abort, T)(T value)
+Expected!(T, E, Hook) expected(E = string, Hook = Abort, T)(T value)
 {
 	return Expected!(T, E, Hook)(value);
 }
 
 /// ditto
-Expected!(void, E) expected(E = string, Hook = Abort)()
+Expected!(void, E, Hook) expected(E = string, Hook = Abort)()
 {
 	return Expected!(void, E, Hook)();
 }
@@ -409,7 +408,7 @@ unittest
 /++
 	Creates an `Expected` object from an error value, with type inference.
 +/
-Expected!(T, E) unexpected(T = void, Hook = Abort, E)(E err)
+Expected!(T, E, Hook) unexpected(T = void, Hook = Abort, E)(E err)
 {
 	static if (Expected!(T, E, Hook).Types.length == 1 && !is(T == void))
 		return Expected!(T, E, Hook)(err, false);
@@ -537,6 +536,167 @@ unittest
 	assert(expected().orElse!(() => unexpected("foo")));
 	assert(unexpected("foo").orElse!(() => expected()));
 	assert(unexpected("foo").orElse!(() => unexpected("bar")).error == "bar");
+}
+
+/++
+	Applies a function to the expected value in an `Expected` object.
+
+	If no expected value is present, the original error value is passed through
+	unchanged, and the function is not called.
+
+	Params:
+		op = function called to map `Expected` value
+		hook = use another hook for mapped `Expected`
+
+	Returns:
+		A new `Expected` object containing the result.
++/
+template map(alias op, Hook = Abort)
+{
+	/++
+		The actual `map` function.
+
+		Params:
+			self = an [Expected] object
+	+/
+	auto map(T, E, H)(auto ref Expected!(T, E, H) self)
+		if ((is(T == void) && is(typeof(op()))) || (!is(T == void) && is(typeof(op(self.value)))))
+	{
+		static if (is(T == void)) alias U = typeof(op());
+		else alias U = typeof(op(self.value));
+
+		if (self.hasError) return unexpected!(U, Hook)(self.error);
+		else
+		{
+			static if (is(T == void)) return expected!(E, Hook)(op());
+			else return expected!(E, Hook)(op(self.value));
+		}
+	}
+}
+
+///
+unittest
+{
+	{
+		assert(expected(42).map!((a) => a/2).value == 21);
+		assert(expected().map!(() => 42).value == 42);
+		assert(unexpected!int("foo").map!((a) => 42).error == "foo");
+		assert(unexpected("foo").map!(() => 42).error == "foo");
+	}
+
+	// remap hook
+	{
+		static struct Hook {}
+		auto res = expected(42).map!((a) => a/2, Hook);
+		assert(res == 21);
+		static assert(is(typeof(res) == Expected!(int, string, Hook)));
+	}
+}
+
+/++
+	Applies a function to the expected error in an `Expected` object.
+
+	If no error is present, the original value is passed through
+	unchanged, and the function is not called.
+
+	Params:
+		op = function called to map `Expected` error
+		hook = use another hook for mapped `Expected`
+
+	Returns:
+		A new `Expected` object containing the result.
++/
+template mapError(alias op, Hook = Abort)
+{
+	/++
+		The actual `mapError` function.
+
+		Params:
+			self = an [Expected] object
+	+/
+	auto mapError(T, E, H)(auto ref Expected!(T, E, H) self)
+		if (is(typeof(op(self.error))))
+	{
+		alias U = typeof(op(self.error));
+
+		static if (!is(T == void))
+		{
+			if (self.hasValue) return expected!(U, Hook)(self.value);
+		}
+		return unexpected!(T, Hook)(op(self.error));
+	}
+}
+
+///
+unittest
+{
+	{
+		assert(expected(42).mapError!((e) => e).value == 42);
+		assert(unexpected("foo").mapError!((e) => new Exception(e)).error.msg == "foo");
+	}
+
+	// remap hook
+	{
+		static struct Hook {}
+		auto res = expected(42).mapError!((e) => e, Hook);
+		assert(res == 42);
+		static assert(is(typeof(res) == Expected!(int, string, Hook)));
+
+		auto res2 = unexpected!int("foo").mapError!((e) => "bar", Hook);
+		assert(res2.error == "bar");
+		static assert(is(typeof(res2) == Expected!(int, string, Hook)));
+	}
+}
+
+/++
+	Maps a `Expected<T, E>` to `U` by applying a function to a contained value, or a fallback function to a contained error value.
+
+	Both functions has to be of the same return type.
+
+	This function can be used to unpack a successful result while handling an error.
+
+	Params:
+		valueOp = function called to map `Expected` value
+		errorOp = function called to map `Expected` error
+		hook = use another hook for mapped `Expected`
+
+	Returns:
+		A new `Expected` object containing the result.
++/
+template mapOrElse(alias valueOp, alias errorOp)
+{
+	/++
+		The actual `mapOrElse` function.
+
+		Params:
+			self = an [Expected] object
+	+/
+	auto mapOrElse(T, E, H)(auto ref Expected!(T, E, H) self)
+		if (
+			is(typeof(errorOp(self.error))) &&
+			(
+				(is(T == void) && is(typeof(valueOp()) == typeof(errorOp(self.error)))) ||
+				(!is(T == void) && is(typeof(valueOp(self.value)) == typeof(errorOp(self.error))))
+			)
+		)
+	{
+		alias U = typeof(errorOp(self.error));
+
+		if (self.hasError) return errorOp(self.error);
+		else
+		{
+			static if (is(T == void)) return valueOp();
+			else return valueOp(self.value);
+		}
+	}
+}
+
+unittest
+{
+	assert(expected(42).mapOrElse!((v) => v/2, (e) => 0) == 21);
+	assert(expected().mapOrElse!(() => true, (e) => false));
+	assert(unexpected!int("foo").mapOrElse!((v) => v/2, (e) => 42) == 42);
+	assert(!unexpected("foo").mapOrElse!(() => true, (e) => false));
 }
 
 // -- global tests --
