@@ -66,7 +66,7 @@ struct Expected(T, E = string, Hook = Abort)
 
 			In case when `T == void`, it constructs `Expected` with error value.
 
-			Default constructor (if enabled) initializez `Expected` to `T.init` value.
+			Default constructor (if enabled) initializes `Expected` to `T.init` value.
 			If `T == void`, it initializes `Expected` with no error.
 		+/
 		this()(auto ref T val)
