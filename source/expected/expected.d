@@ -22,7 +22,7 @@ Author: Tomáš Chaloupka
 
 //TODO: unwrap a unexpect?
 //TODO: map, bind, then
-//TODO: equal, hash
+//TODO: toHash
 //TODO: catchError
 //TODO: swap
 //TODO: collect - wraps the method with try/catch end returns Expected: see https://dlang.org/phobos/std_exception.html#collectException
@@ -179,6 +179,27 @@ struct Expected(T, E = string, Hook = Abort)
 		Returns: `true` if there is no error set, `false` otherwise.
 	+/
 	bool opCast(T)() const if (is(T == bool)) { return !this.hasError; }
+
+	static if (!is(T == void))
+	{
+		/++ Checks whether this `Expected` object contains a specific expected value.
+
+			* `opEquals` for the value is available only when `T != void`.
+			* `opEquals` for the error isn't available, use equality test for `Expected` in that case.
+		+/
+		bool opEquals()(const auto ref T rhs) const
+		{
+			return hasValue && value == rhs;
+		}
+	}
+
+	/// Checks whether this `Expected` object and `rhs` contain the same expected value or error value.
+	bool opEquals()(const auto ref Expected!(T, E, Hook) rhs) const
+	{
+		if (state != rhs.state) return false;
+		static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
+		return error == rhs.error;
+	}
 
 	static if (!is(T == void))
 	{
@@ -585,4 +606,24 @@ nothrow @nogc unittest
 		assert(res.hasError);
 		assert(res.error == 42);
 	}
+}
+
+// opEquals
+unittest
+{
+	assert(expected(42) == 42);
+	assert(expected(42) != 43);
+	assert(expected("foo") == "foo");
+	assert(expected("foo") != "bar");
+	assert(expected("foo") == cast(const string)"foo");
+	assert(expected("foo") == cast(immutable string)"foo");
+	assert(expected(42) == expected(42));
+	assert(expected(42) != expected(43));
+	assert(expected(42) != unexpected!int("42"));
+
+	static assert(!__traits(compiles, unexpected("foo") == "foo"));
+	assert(unexpected(42) == unexpected(42));
+	assert(unexpected(42) != unexpected(43));
+	assert(unexpected("foo") == unexpected("foo"));
+	assert(unexpected("foo") != unexpected("bar"));
 }
