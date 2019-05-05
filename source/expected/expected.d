@@ -20,11 +20,8 @@ License: BSL-1.0
 Author: Tomáš Chaloupka
 +/
 
-//TODO: unwrap a unexpect?
+//TODO: unwrap, unexpect?
 //TODO: map, bind, then
-//TODO: toHash
-//TODO: catchError
-//TODO: swap
 //TODO: collect - wraps the method with try/catch end returns Expected: see https://dlang.org/phobos/std_exception.html#collectException
 //      or maybe use then or expected for that and behave based on the result type and nothrow
 //TODO: collect errno function call - see https://dlang.org/phobos/std_exception.html#ErrnoException
@@ -199,6 +196,16 @@ struct Expected(T, E = string, Hook = Abort)
 		if (state != rhs.state) return false;
 		static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
 		return error == rhs.error;
+	}
+
+	/++ Calculates the hash value of the `Expected` in a way that iff it has a value,
+		it returns hash of the value.
+		Hash is computed using internal state and storage of the `Expected` otherwise.
+	+/
+	size_t toHash()() const
+	{
+		static if (!is(T == void)) { if (hasValue) return value.hashOf; }
+		return storage.hashOf(state);
 	}
 
 	static if (!is(T == void))
@@ -626,4 +633,16 @@ unittest
 	assert(unexpected(42) != unexpected(43));
 	assert(unexpected("foo") == unexpected("foo"));
 	assert(unexpected("foo") != unexpected("bar"));
+}
+
+// toHash
+unittest
+{
+	assert(expected(42).hashOf == 42.hashOf);
+	assert(expected(42).hashOf != 43.hashOf);
+	assert(expected(42).hashOf == expected(42).hashOf);
+	assert(expected(42).hashOf != expected(43).hashOf);
+	assert(expected(42).hashOf == expected!bool(42).hashOf);
+	assert(expected(42).hashOf != unexpected("foo").hashOf);
+	assert(unexpected("foo").hashOf == unexpected("foo").hashOf);
 }
