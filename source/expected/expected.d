@@ -191,7 +191,7 @@ struct Expected(T, E = string, Hook = Abort)
 		it returns hash of the value.
 		Hash is computed using internal state and storage of the `Expected` otherwise.
 	+/
-	size_t toHash()() const
+	size_t toHash()() const nothrow
 	{
 		static if (!is(T == void)) { if (hasValue) return value.hashOf; }
 		return storage.hashOf(state);
@@ -632,6 +632,7 @@ unittest
 {
 	{
 		assert(expected(42).mapError!((e) => e).value == 42);
+		assert(unexpected("foo").mapError!((e) => 42).error == 42);
 		assert(unexpected("foo").mapError!((e) => new Exception(e)).error.msg == "foo");
 	}
 
@@ -916,16 +917,20 @@ unittest
 	assert(unexpected("foo") != unexpected("bar"));
 }
 
-// toHash
-unittest
+//FIXME: doesn't work - some older dmd error
+static if (__VERSION__ >= 2082)
 {
-	assert(expected(42).hashOf == 42.hashOf);
-	assert(expected(42).hashOf != 43.hashOf);
-	assert(expected(42).hashOf == expected(42).hashOf);
-	assert(expected(42).hashOf != expected(43).hashOf);
-	assert(expected(42).hashOf == expected!bool(42).hashOf);
-	assert(expected(42).hashOf != unexpected("foo").hashOf);
-	assert(unexpected("foo").hashOf == unexpected("foo").hashOf);
+	// toHash
+	unittest
+	{
+		assert(expected(42).hashOf == 42.hashOf);
+		assert(expected(42).hashOf != 43.hashOf);
+		assert(expected(42).hashOf == expected(42).hashOf);
+		assert(expected(42).hashOf != expected(43).hashOf);
+		assert(expected(42).hashOf == expected!bool(42).hashOf);
+		assert(expected(42).hashOf != unexpected("foo").hashOf);
+		assert(unexpected("foo").hashOf == unexpected("foo").hashOf);
+	}
 }
 
 /// range interface
