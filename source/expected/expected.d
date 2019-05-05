@@ -154,18 +154,8 @@ struct Expected(T, E = string, Hook = Abort)
 			/// Assigns a value or error to an `Expected`.
 			void opAssign()(auto ref CT rhs)
 			{
-				static foreach (i, CT; Types)
-				{
-					static if (hasElaborateDestructor!CT)
-					{
-						static if (Types.length == 1) { if (state != State.empty) destroy.storage.values[0]; }
-						else static if (i == 0) { if (state == State.value) destroy(storage.values[0]); }
-						else { if (state == State.error) destroy(storage.values[1]); }
-					}
-				}
-
 				//TODO: Hook to disallow reassign
-
+				destroyStorage();
 				storage = Storage(forward!rhs);
 				setState!CT();
 			}
@@ -249,6 +239,23 @@ struct Expected(T, E = string, Hook = Abort)
 		return trustedGetError;
 	}
 
+	// range interface
+	static if (!is(T == void))
+	{
+		/++ Range interface defined by `empty`, `front`, `popFront`.
+			Yields one value if `Expected` has value.
+
+			If `T == void`, range interface isn't defined.
+		+/
+		@property bool empty() const { return state != State.value; }
+
+		/// ditto
+		@property ref inout(T) front() inout { return value; }
+
+		/// ditto
+		void popFront() { destroyStorage(); state = State.empty; }
+	}
+
 	private:
 
 	union Storage
@@ -289,6 +296,19 @@ struct Expected(T, E = string, Hook = Abort)
 		ref inout(T) trustedGetValue()() inout
 		{
 			return __traits(getMember, storage, "values")[0];
+		}
+	}
+
+	void destroyStorage()()
+	{
+		static foreach (i, CT; Types)
+		{
+			static if (hasElaborateDestructor!CT)
+			{
+				static if (Types.length == 1) { if (state != State.empty) destroy.storage.values[0]; }
+				else static if (i == 0) { if (state == State.value) destroy(storage.values[0]); }
+				else { if (state == State.error) destroy(storage.values[1]); }
+			}
 		}
 	}
 
@@ -746,4 +766,28 @@ unittest
 	assert(expected(42).hashOf == expected!bool(42).hashOf);
 	assert(expected(42).hashOf != unexpected("foo").hashOf);
 	assert(unexpected("foo").hashOf == unexpected("foo").hashOf);
+}
+
+/// range interface
+unittest
+{
+	{
+		auto r = expected(42);
+		assert(!r.empty);
+		assert(r.front == 42);
+		r.popFront();
+		assert(r.empty);
+	}
+
+	{
+		auto r = unexpected!int("foo");
+		assert(r.empty);
+	}
+
+	{
+		auto r = unexpected("foo");
+		static assert(!__traits(compiles, r.empty));
+		static assert(!__traits(compiles, r.front));
+		static assert(!__traits(compiles, r.popFront));
+	}
 }
