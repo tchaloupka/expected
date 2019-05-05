@@ -425,8 +425,54 @@ unittest
 }
 
 /++
+	Returns the error contained within the `Expected` _and then_ another value if there's no error.
+	This function can be used for control flow based on `Expected` values.
+
+	Params:
+		exp = The `Expected` to call andThen on
+		value = The value to return if there isn't an error
+		pred = The predicate to call if the there isn't an error
++/
+auto ref EX andThen(EX)(return auto ref inout EX exp, lazy EX value)
+	if (is(EX : Expected!(T, E, H), T, E, H))
+{
+	//FIXME: this doesn't work
+	// return exp.andThen!value;
+	if (exp.hasError) return exp;
+	else return value;
+}
+
+/// ditto
+auto ref EX andThen(alias pred, EX)(return inout auto ref EX exp)
+	if (
+		is(EX : Expected!(T, E, H), T, E, H)
+		&& is(typeof(pred()) : EX)
+	)
+{
+	return exp.hasError ? exp : pred();
+}
+
+///
+unittest
+{
+	assert(expected(42).andThen(expected(1)) == 1);
+	assert(expected(42).andThen!(() => expected(0)) == 0);
+	assert(expected(42).andThen(unexpected!int("foo")).error == "foo");
+	assert(expected(42).andThen!(() => unexpected!int("foo")).error == "foo");
+	assert(unexpected!int("foo").andThen(expected(42)).error == "foo");
+	assert(unexpected!int("foo").andThen!(() => expected(42)).error == "foo");
+	assert(unexpected!int("foo").andThen(unexpected!int("bar")).error == "foo");
+	assert(unexpected!int("foo").andThen!(() => unexpected!int("bar")).error == "foo");
+
+	// with void value
+	assert(expected().andThen!(() => expected()));
+	assert(expected().andThen!(() => unexpected("foo")).error == "foo");
+	assert(unexpected("foo").andThen!(() => expected()).error == "foo");
+}
+
+/++
 	Returns the value contained within the `Expected` _or else_ another value if there's an error.
-	This function can be used for control flow based on result values.
+	This function can be used for control flow based on `Expected` values.
 
 	Params:
 		exp = The `Expected` to call orElse on
@@ -434,14 +480,14 @@ unittest
 		pred = The predicate to call if the there is an error
 +/
 auto ref U orElse(EX, U)(inout auto ref EX exp, lazy U value)
-	if (is(EX == Expected!(T, E, H), T, E, H) && is(U : T))
+	if (is(EX : Expected!(T, E, H), T, E, H) && is(U : T))
 {
 	return exp.orElse!value;
 }
 
 /// ditto
 auto ref orElse(alias pred, EX)(inout auto ref EX exp)
-	if (is(EX == Expected!(T, E, H), T, E, H) && is(typeof(pred()) : T))
+	if (is(EX : Expected!(T, E, H), T, E, H) && is(typeof(pred()) : T))
 {
 	return exp.hasError ? pred() : exp.value;
 }
@@ -449,7 +495,7 @@ auto ref orElse(alias pred, EX)(inout auto ref EX exp)
 /// ditto
 auto ref orElse(alias pred, EX)(inout auto ref EX exp)
 	if (
-		is(EX == Expected!(T, E, H), T, E, H)
+		is(EX : Expected!(T, E, H), T, E, H)
 		&& is(typeof(pred()) : Expected!(T, E, H))
 	)
 {
@@ -463,7 +509,6 @@ unittest
 	assert(expected(42).orElse!(() => 0) == 42);
 	assert(unexpected!int("foo").orElse(0) == 0);
 	assert(unexpected!int("foo").orElse!(() => 0) == 0);
-	pragma(msg, typeof({return expected(0);}()));
 	assert(expected(42).orElse!(() => expected(0)) == 42);
 	assert(unexpected!int("foo").orElse!(() => expected(42)) == 42);
 	assert(unexpected!int("foo").orElse!(() => unexpected!int("bar")).error == "bar");
