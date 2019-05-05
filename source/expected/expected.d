@@ -55,7 +55,7 @@ struct Expected(T, E = string, Hook = Abort)
 	import std.traits: hasElaborateDestructor, isAssignable, isCopyable, Unqual;
 	import std.typecons : Flag, No, Yes;
 
-	alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
+	private alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
 
 	static foreach (i, T; Types)
 	{
@@ -287,6 +287,14 @@ struct Expected(T, E = string, Hook = Abort)
 	}
 }
 
+/++ TODO
++/
+struct Abort
+{
+static:
+	immutable bool enableDefaultConstructor = true;
+}
+
 /// An exception that represents an error value.
 class Unexpected(T) : Exception
 {
@@ -304,26 +312,88 @@ class Unexpected(T) : Exception
 /++
 	Creates an `Expected` object from an expected value, with type inference.
 +/
-Expected!(T, E) expected(T, E)(T value)
+Expected!(T, E) expected(E = string, Hook = Abort, T)(T value)
 {
-	return Expected!(T, E)(value);
+	return Expected!(T, E, Hook)(value);
+}
+
+/// ditto
+Expected!(void, E) expected(E = string, Hook = Abort)()
+{
+	return Expected!(void, E, Hook)();
+}
+
+// expected
+unittest
+{
+	// void
+	{
+		auto res = expected();
+		static assert(is(typeof(res) == Expected!(void, string)));
+		assert(res);
+	}
+
+	// int
+	{
+		auto res = expected(42);
+		static assert(is(typeof(res) == Expected!(int, string)));
+		assert(res);
+		assert(res.value == 42);
+	}
+
+	// string
+	{
+		auto res = expected("42");
+		static assert(is(typeof(res) == Expected!(string, string)));
+		assert(res);
+		assert(res.value == "42");
+	}
+
+	// other error type
+	{
+		auto res = expected!bool(42);
+		static assert(is(typeof(res) == Expected!(int, bool)));
+		assert(res);
+		assert(res.value == 42);
+	}
 }
 
 /++
 	Creates an `Expected` object from an error value, with type inference.
 +/
-Expected!(T, E) unexpected(T, E)(E value)
+Expected!(T, E) unexpected(T = void, Hook = Abort, E)(E err)
 {
-	static if (Expected!(T, E).Types.length == 1) return Expected!(T, E)(value, false);
-	else return Expected!(T, E)(value);
+	static if (Expected!(T, E, Hook).Types.length == 1 && !is(T == void))
+		return Expected!(T, E, Hook)(err, false);
+	else return Expected!(T, E, Hook)(err);
 }
 
-/++ TODO
-+/
-struct Abort
+//unexpected
+unittest
 {
-static:
-	immutable bool enableDefaultConstructor = true;
+	// implicit void value type
+	{
+		auto res = unexpected("foo");
+		static assert(is(typeof(res) == Expected!(void, string)));
+		assert(!res);
+		assert(res.error == "foo");
+	}
+
+	// bool
+	{
+		auto res = unexpected!int("42");
+		static assert(is(typeof(res) == Expected!(int, string)));
+		assert(!res);
+		assert(res.error == "42");
+	}
+
+	// other error type
+	{
+		auto res = unexpected!bool(42);
+		static assert(is(typeof(res) == Expected!(bool, int)));
+		assert(!res);
+		assert(res.error == 42);
+	}
 }
 
 // Expected.init
