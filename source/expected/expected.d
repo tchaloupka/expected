@@ -21,10 +21,8 @@ License: BSL-1.0
 Author: Tomáš Chaloupka
 +/
 
-//TODO: collect - wraps the method with try/catch end returns Expected: see https://dlang.org/phobos/std_exception.html#collectException
-//      or maybe use then or expected for that and behave based on the result type and nothrow
 //TODO: collect errno function call - see https://dlang.org/phobos/std_exception.html#ErrnoException
-//TODO: usage examples
+//TODO: documentation and usage examples
 //TODO: ability to enforce error handling (via refcounted payload)
 
 module expected;
