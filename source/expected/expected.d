@@ -405,6 +405,37 @@ unittest
 	}
 }
 
+/++ Constructs `Expected` from the result of the provided function.
+
+	If the function is `nothrow`, it just returns it's result using `expected`.
+
+	If not, then it uses `try catch` block and constructs `Expected` with value or error.
++/
+template expected(alias fun, Hook = Abort)
+{
+	auto expected(Args...)(auto ref Args args) if (is(typeof(fun(args))))
+	{
+		import std.traits : hasFunctionAttributes;
+
+		alias T = typeof(fun(args));
+		static if (is(hasFunctionAttributes!(fun, "nothrow"))) return expected!Exception(fun(args));
+		else
+		{
+			try return Expected!(T, Exception)(fun(args));
+			catch (Exception ex) return unexpected!T(ex);
+		}
+	}
+}
+
+///
+unittest
+{
+	auto fn(int v) { if (v == 42) throw new Exception("don't panic"); return v; }
+
+	assert(expected!fn(1) == 1);
+	assert(expected!fn(42).error.msg == "don't panic");
+}
+
 /++
 	Creates an `Expected` object from an error value, with type inference.
 +/
@@ -452,17 +483,14 @@ unittest
 		value = The value to return if there isn't an error
 		pred = The predicate to call if the there isn't an error
 +/
-auto ref EX andThen(EX)(return auto ref inout EX exp, lazy EX value)
+auto ref EX andThen(EX)(auto ref EX exp, lazy EX value)
 	if (is(EX : Expected!(T, E, H), T, E, H))
 {
-	//FIXME: this doesn't work
-	// return exp.andThen!value;
-	if (exp.hasError) return exp;
-	else return value;
+	return exp.andThen!value;
 }
 
 /// ditto
-auto ref EX andThen(alias pred, EX)(return inout auto ref EX exp)
+auto ref EX andThen(alias pred, EX)(auto ref EX exp)
 	if (
 		is(EX : Expected!(T, E, H), T, E, H)
 		&& is(typeof(pred()) : EX)
@@ -498,21 +526,21 @@ unittest
 		value = The value to return if there is an error
 		pred = The predicate to call if the there is an error
 +/
-auto ref U orElse(EX, U)(inout auto ref EX exp, lazy U value)
+U orElse(EX, U)(auto ref EX exp, lazy U value)
 	if (is(EX : Expected!(T, E, H), T, E, H) && is(U : T))
 {
 	return exp.orElse!value;
 }
 
 /// ditto
-auto ref orElse(alias pred, EX)(inout auto ref EX exp)
+auto ref orElse(alias pred, EX)(auto ref EX exp)
 	if (is(EX : Expected!(T, E, H), T, E, H) && is(typeof(pred()) : T))
 {
 	return exp.hasError ? pred() : exp.value;
 }
 
 /// ditto
-auto ref orElse(alias pred, EX)(inout auto ref EX exp)
+auto ref orElse(alias pred, EX)(auto ref EX exp)
 	if (
 		is(EX : Expected!(T, E, H), T, E, H)
 		&& is(typeof(pred()) : Expected!(T, E, H))
