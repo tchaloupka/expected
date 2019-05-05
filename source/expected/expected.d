@@ -14,6 +14,7 @@ Main differences with that are:
 
 * lightweight, no other external dependencies
 * allows to use same types for `T` and `E`
+* allows to define `Expected` without value (`void` for `T`)
 * provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
 
 License: BSL-1.0
@@ -422,6 +423,58 @@ unittest
 		assert(res.error == 42);
 	}
 }
+
+/++
+	Returns the value contained within the `Expected` _or else_ another value if there's an error.
+	This function can be used for control flow based on result values.
+
+	Params:
+		exp = The `Expected` to call orElse on
+		value = The value to return if there is an error
+		pred = The predicate to call if the there is an error
++/
+auto ref U orElse(EX, U)(inout auto ref EX exp, lazy U value)
+	if (is(EX == Expected!(T, E, H), T, E, H) && is(U : T))
+{
+	return exp.orElse!value;
+}
+
+/// ditto
+auto ref orElse(alias pred, EX)(inout auto ref EX exp)
+	if (is(EX == Expected!(T, E, H), T, E, H) && is(typeof(pred()) : T))
+{
+	return exp.hasError ? pred() : exp.value;
+}
+
+/// ditto
+auto ref orElse(alias pred, EX)(inout auto ref EX exp)
+	if (
+		is(EX == Expected!(T, E, H), T, E, H)
+		&& is(typeof(pred()) : Expected!(T, E, H))
+	)
+{
+	return exp.hasError ? pred() : exp;
+}
+
+///
+unittest
+{
+	assert(expected(42).orElse(0) == 42);
+	assert(expected(42).orElse!(() => 0) == 42);
+	assert(unexpected!int("foo").orElse(0) == 0);
+	assert(unexpected!int("foo").orElse!(() => 0) == 0);
+	pragma(msg, typeof({return expected(0);}()));
+	assert(expected(42).orElse!(() => expected(0)) == 42);
+	assert(unexpected!int("foo").orElse!(() => expected(42)) == 42);
+	assert(unexpected!int("foo").orElse!(() => unexpected!int("bar")).error == "bar");
+
+	// with void value
+	assert(expected().orElse!(() => unexpected("foo")));
+	assert(unexpected("foo").orElse!(() => expected()));
+	assert(unexpected("foo").orElse!(() => unexpected("bar")).error == "bar");
+}
+
+// -- global tests --
 
 // Expected.init
 @system nothrow unittest
