@@ -20,7 +20,6 @@ License: BSL-1.0
 Author: Tomáš Chaloupka
 +/
 
-//TODO: unwrap, unexpect?
 //TODO: map, bind, then
 //TODO: collect - wraps the method with try/catch end returns Expected: see https://dlang.org/phobos/std_exception.html#collectException
 //      or maybe use then or expected for that and behave based on the result type and nothrow
@@ -223,7 +222,7 @@ struct Expected(T, E = string, Hook = Abort)
 				Otherwise, an [Unexpected] instance containing the error value is
 				thrown.
 		+/
-		@property inout(T) value() inout
+		@property ref inout(T) value() inout
 		{
 			//TODO: hook
 			assert(state != State.empty);
@@ -241,7 +240,7 @@ struct Expected(T, E = string, Hook = Abort)
 	/++
 		Returns the error value. May only be called when `hasValue` returns `false`.
 	+/
-	inout(E) error() inout
+	@property ref inout(E) error() inout
 	{
 		assert(state != State.empty);
 		assert(state == State.error);
@@ -460,6 +459,8 @@ nothrow @nogc unittest
 	assert(res.value == 42);
 	res = 43;
 	assert(res.value == 43);
+	res.value = 43;
+	assert(res.value == 43);
 }
 
 // Default types with const payload
@@ -471,6 +472,7 @@ nothrow @nogc unittest
 	assert(res);
 	assert(res.hasValue && !res.hasError);
 	assert(res.value == 42);
+	static assert(!__traits(compiles, res.value = res.value));
 }
 
 // Default types with immutable payload
@@ -482,6 +484,7 @@ unittest
 	assert(res);
 	assert(res.hasValue && !res.hasError);
 	assert(res.value == 42);
+	static assert(!__traits(compiles, res.value = res.value));
 }
 
 // opAssign
