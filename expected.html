@@ -63,29 +63,34 @@ introduce any state, or an object of type <tt class="inline-code">Hook</tt> othe
 <span class="br">19 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">hasError</span>);
 <span class="br">20 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">error</span> == <span class="str">&quot;oops&quot;</span>);
 <span class="br">21 </span>
-<span class="br">22 </span><span class="com">// expected from throwing function</span>
-<span class="br">23 </span><span class="kwrd">assert</span>(<span class="hid">expected</span>!<span class="hid">bar</span>(<span class="num">1</span>) == <span class="num">0</span>);
-<span class="br">24 </span><span class="kwrd">assert</span>(<span class="hid">expected</span>!<span class="hid">bar</span>(<span class="num">0</span>).<span class="hid">error</span>.<span class="hid">msg</span> == <span class="str">&quot;err&quot;</span>);
-<span class="br">25 </span>
-<span class="br">26 </span><span class="com">// orElse</span>
-<span class="br">27 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">orElse</span>!(() =&gt; <span class="num">0</span>) == <span class="num">21</span>);
-<span class="br">28 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">orElse</span>(<span class="num">100</span>) == <span class="num">100</span>);
-<span class="br">29 </span>
-<span class="br">30 </span><span class="com">// andThen</span>
-<span class="br">31 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">andThen</span>(<span class="hid">foo</span>(<span class="num">6</span>)) == <span class="num">7</span>);
-<span class="br">32 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">andThen</span>(<span class="hid">foo</span>(<span class="num">6</span>)).<span class="hid">error</span> == <span class="str">&quot;oops&quot;</span>);
-<span class="br">33 </span>
-<span class="br">34 </span><span class="com">// map</span>
-<span class="br">35 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span>*<span class="num">2</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span> - <span class="num">2</span>) == <span class="num">40</span>);
-<span class="br">36 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span>*<span class="num">2</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span> - <span class="num">2</span>).<span class="hid">error</span> == <span class="str">&quot;oops&quot;</span>);
-<span class="br">37 </span>
-<span class="br">38 </span><span class="com">// mapError</span>
-<span class="br">39 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">mapError</span>!(<span class="hid">e</span> =&gt; <span class="str">&quot;OOPS&quot;</span>).<span class="hid">error</span> == <span class="str">&quot;OOPS&quot;</span>);
-<span class="br">40 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">mapError</span>!(<span class="hid">e</span> =&gt; <span class="str">&quot;OOPS&quot;</span>) == <span class="num">21</span>);
-<span class="br">41 </span>
-<span class="br">42 </span><span class="com">// mapOrElse</span>
-<span class="br">43 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">mapOrElse</span>!(<span class="hid">v</span> =&gt; <span class="hid">v</span>*<span class="num">2</span>, <span class="hid">e</span> =&gt; <span class="num">0</span>) == <span class="num">42</span>);
-<span class="br">44 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">mapOrElse</span>!(<span class="hid">v</span> =&gt; <span class="hid">v</span>*<span class="num">2</span>, <span class="hid">e</span> =&gt; <span class="num">0</span>) == <span class="num">0</span>);</pre></div><h2 id="meta"><a href="#meta" class="header-anchor">Meta</a></h2><div class="documentation-comment source-section other-section"><h3 id="source"><a href="#source" class="header-anchor">Source</a></h3><div><p><a href="source/expected.d.html">See Source File</a><br /></p></div></div><div class="documentation-comment license-section other-section"><h3 id="license"><a href="#license" class="header-anchor">License</a></h3><div><p>BSL-1.0</p></div></div><div class="documentation-comment authors-section other-section"><h3 id="authors"><a href="#authors" class="header-anchor">Authors</a></h3><div><p>Tom&#225;&#353; Chaloupka</p></div></div></div></div>
+<span class="br">22 </span><span class="com">// void result</span>
+<span class="br">23 </span><span class="kwrd">assert</span>(<span class="hid">Expected</span>!(<span class="type">void</span>)()); <span class="com">// no error -&gt; success</span>
+<span class="br">24 </span><span class="kwrd">assert</span>(!<span class="hid">Expected</span>!(<span class="type">void</span>)().<span class="hid">hasError</span>);
+<span class="br">25 </span><span class="com">// assert(unexpected(&quot;foo&quot;).value); // doesn't have hasValue and value properties</span>
+<span class="br">26 </span>
+<span class="br">27 </span><span class="com">// expected from throwing function</span>
+<span class="br">28 </span><span class="kwrd">assert</span>(<span class="hid">expected</span>!<span class="hid">bar</span>(<span class="num">1</span>) == <span class="num">0</span>);
+<span class="br">29 </span><span class="kwrd">assert</span>(<span class="hid">expected</span>!<span class="hid">bar</span>(<span class="num">0</span>).<span class="hid">error</span>.<span class="hid">msg</span> == <span class="str">&quot;err&quot;</span>);
+<span class="br">30 </span>
+<span class="br">31 </span><span class="com">// orElse</span>
+<span class="br">32 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">orElse</span>!(() =&gt; <span class="num">0</span>) == <span class="num">21</span>);
+<span class="br">33 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">orElse</span>(<span class="num">100</span>) == <span class="num">100</span>);
+<span class="br">34 </span>
+<span class="br">35 </span><span class="com">// andThen</span>
+<span class="br">36 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">andThen</span>(<span class="hid">foo</span>(<span class="num">6</span>)) == <span class="num">7</span>);
+<span class="br">37 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">andThen</span>(<span class="hid">foo</span>(<span class="num">6</span>)).<span class="hid">error</span> == <span class="str">&quot;oops&quot;</span>);
+<span class="br">38 </span>
+<span class="br">39 </span><span class="com">// map</span>
+<span class="br">40 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span>*<span class="num">2</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span> - <span class="num">2</span>) == <span class="num">40</span>);
+<span class="br">41 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span>*<span class="num">2</span>).<span class="hid">map</span>!(<span class="hid">a</span> =&gt; <span class="hid">a</span> - <span class="num">2</span>).<span class="hid">error</span> == <span class="str">&quot;oops&quot;</span>);
+<span class="br">42 </span>
+<span class="br">43 </span><span class="com">// mapError</span>
+<span class="br">44 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">mapError</span>!(<span class="hid">e</span> =&gt; <span class="str">&quot;OOPS&quot;</span>).<span class="hid">error</span> == <span class="str">&quot;OOPS&quot;</span>);
+<span class="br">45 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">mapError</span>!(<span class="hid">e</span> =&gt; <span class="str">&quot;OOPS&quot;</span>) == <span class="num">21</span>);
+<span class="br">46 </span>
+<span class="br">47 </span><span class="com">// mapOrElse</span>
+<span class="br">48 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">2</span>).<span class="hid">mapOrElse</span>!(<span class="hid">v</span> =&gt; <span class="hid">v</span>*<span class="num">2</span>, <span class="hid">e</span> =&gt; <span class="num">0</span>) == <span class="num">42</span>);
+<span class="br">49 </span><span class="kwrd">assert</span>(<span class="hid">foo</span>(<span class="num">0</span>).<span class="hid">mapOrElse</span>!(<span class="hid">v</span> =&gt; <span class="hid">v</span>*<span class="num">2</span>, <span class="hid">e</span> =&gt; <span class="num">0</span>) == <span class="num">0</span>);</pre></div><h2 id="meta"><a href="#meta" class="header-anchor">Meta</a></h2><div class="documentation-comment source-section other-section"><h3 id="source"><a href="#source" class="header-anchor">Source</a></h3><div><p><a href="source/expected.d.html">See Source File</a><br /></p></div></div><div class="documentation-comment license-section other-section"><h3 id="license"><a href="#license" class="header-anchor">License</a></h3><div><p>BSL-1.0</p></div></div><div class="documentation-comment authors-section other-section"><h3 id="authors"><a href="#authors" class="header-anchor">Authors</a></h3><div><p>Tom&#225;&#353; Chaloupka</p></div></div></div></div>
 		<div id="page-nav">
 		<span class="type-separator">modules</span><ul><li><a href="expected.html" class="module current">expected</a></li></ul></div>
 	</div>
