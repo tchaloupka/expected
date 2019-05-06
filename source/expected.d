@@ -46,7 +46,7 @@ struct Expected(T, E = string, Hook = Abort)
 {
 	import std.functional: forward;
 	import std.meta : AliasSeq, Erase, NoDuplicates;
-	import std.traits: hasElaborateDestructor, isAssignable, isCopyable, Unqual;
+	import std.traits: isAssignable, isCopyable, Unqual;
 	import std.typecons : Flag, No, Yes;
 
 	private alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
@@ -134,27 +134,24 @@ struct Expected(T, E = string, Hook = Abort)
 		}
 	}
 
-	static if (__traits(hasMember, Hook, "enableDefaultConstructor"))
-	{
-		static assert(
-			is(typeof(__traits(getMember, Hook, "enableDefaultConstructor")) : bool),
-			"Hook's enableDefaultConstructor is expected to be of bool value"
-		);
-		static if (!__traits(getMember, Hook, "enableDefaultConstructor")) @disable this();
-	}
+	static if (!is(T == void) && !isDefaultConstructorEnabled!Hook) @disable this();
 
-	static foreach (i, CT; Types)
+	static if (isDefaultConstructorEnabled!Hook)
 	{
-		//TODO: Hook to disallow opAssign completely
-		static if (isAssignable!CT)
+		static foreach (i, CT; Types)
 		{
-			/// Assigns a value or error to an `Expected`.
-			void opAssign()(auto ref CT rhs)
+			static if (isAssignable!CT)
 			{
-				//TODO: Hook to disallow reassign
-				destroyStorage();
-				storage = Storage(forward!rhs);
-				setState!CT();
+				/++ Assigns a value or error to an `Expected`.
+
+					Note: This is only allowed when default constructor is also enabled.
+				+/
+				void opAssign()(auto ref CT rhs)
+				{
+					//TODO: Hook to disallow reassign
+					storage = Storage(forward!rhs);
+					setState!CT();
+				}
 			}
 		}
 	}
@@ -250,12 +247,15 @@ struct Expected(T, E = string, Hook = Abort)
 		@property ref inout(T) front() inout { return value; }
 
 		/// ditto
-		void popFront() { destroyStorage(); state = State.empty; }
+		void popFront() { state = State.empty; }
 	}
 
 	private:
 
-	union Storage
+	//FIXME: can probably be union instead, but that doesn't work well with destructors and copy constructors/postblits
+	//or change it for a couple of pointers and make the Expected payload refcounted
+	//that could be used to enforce result check too
+	struct Storage
 	{
 		Types values;
 
@@ -281,7 +281,7 @@ struct Expected(T, E = string, Hook = Abort)
 		}
 	}
 
-	@trusted
+	//@trusted // needed for union
 	ref inout(E) trustedGetError()() inout
 	{
 		static if (Types.length == 1) return __traits(getMember, storage, "values")[0];
@@ -290,30 +290,17 @@ struct Expected(T, E = string, Hook = Abort)
 
 	static if (!is(T == void))
 	{
+		//@trusted // needed for union
 		ref inout(T) trustedGetValue()() inout
 		{
 			return __traits(getMember, storage, "values")[0];
 		}
 	}
 
-	void destroyStorage()()
-	{
-		static foreach (i, CT; Types)
-		{
-			static if (hasElaborateDestructor!CT)
-			{
-				static if (Types.length == 1) { if (state != State.empty) destroy.storage.values[0]; }
-				else static if (i == 0) { if (state == State.value) destroy(storage.values[0]); }
-				else { if (state == State.error) destroy(storage.values[1]); }
-			}
-		}
-	}
-
 	enum State : ubyte { empty, value, error }
 
 	Storage storage;
-	static if (is(T == void)) State state = State.empty;
-	else State state = State.value;
+	State state = State.empty;
 
 	void setState(MT, Flag!"force" force = No.force)()
 	{
@@ -332,12 +319,36 @@ struct Expected(T, E = string, Hook = Abort)
 	}
 }
 
+/// Template to determine if provided Hook enables default constructor for `Expected`
+template isDefaultConstructorEnabled(Hook)
+{
+	static if (__traits(hasMember, Hook, "enableDefaultConstructor"))
+	{
+		static assert(
+			is(typeof(__traits(getMember, Hook, "enableDefaultConstructor")) : bool),
+			"Hook's enableDefaultConstructor is expected to be of type bool"
+		);
+		static if (__traits(getMember, Hook, "enableDefaultConstructor")) enum isDefaultConstructorEnabled = true;
+		else enum isDefaultConstructorEnabled = false;
+	}
+	else enum isDefaultConstructorEnabled = false;
+}
+
+///
+unittest
+{
+	static struct Foo {}
+	static struct Bar { static immutable bool enableDefaultConstructor = true; }
+	static assert(!isDefaultConstructorEnabled!Foo);
+	static assert(isDefaultConstructorEnabled!Bar);
+}
+
 /++ TODO
 +/
 struct Abort
 {
 static:
-	immutable bool enableDefaultConstructor = true;
+	immutable bool enableDefaultConstructor = false;
 }
 
 /// An exception that represents an error value.
@@ -731,28 +742,83 @@ unittest
 // Expected.init
 @system nothrow unittest
 {
-	auto res = Expected!(int, string).init;
-	assert(res.hasValue && !res.hasError);
-	assert(res);
-	assert(res.value == int.init);
-	assertThrown!Throwable(res.error);
+	struct EnableDefaultConstructor { static immutable bool enableDefaultConstructor = true; }
+
+	{
+		auto res = Expected!(int, string).init;
+		assert(!res.hasValue && !res.hasError);
+		assert(res);
+		assertThrown!Throwable(res.value);
+		assertThrown!Throwable(res.error);
+		static assert(!__traits(compiles, res = 42));
+	}
+
+	{
+		auto res = Expected!(int, string, EnableDefaultConstructor).init;
+		assert(!res.hasValue && !res.hasError);
+		assert(res);
+		assertThrown!Throwable(res.value);
+		assertThrown!Throwable(res.error);
+		res = 42;
+		assert(res.value == 42);
+	}
+
+	// T == void
+	{
+		auto res = Expected!(void, string).init;
+		static assert(!__traits(compiles, res.hasValue));
+		static assert(!__traits(compiles, res.value));
+		static assert(!__traits(compiles, res = "foo"));
+		assert(!res.hasError);
+		assert(res);
+		assertThrown!Throwable(res.error);
+	}
+
+	// T == void
+	{
+		auto res = Expected!(void, string, EnableDefaultConstructor).init;
+		static assert(!__traits(compiles, res.hasValue));
+		static assert(!__traits(compiles, res.value));
+		assert(!res.hasError);
+		assert(res.state == Expected!(void, string, EnableDefaultConstructor).State.empty);
+		assert(res);
+		assertThrown!Throwable(res.error);
+		res = "foo";
+		assert(res.error == "foo");
+	}
 }
 
 // Default constructor - disabled
 unittest
 {
-	static struct DisableDefaultConstructor { static immutable bool enableDefaultConstructor = false; }
-	static assert(!__traits(compiles, Expected!(int, string, DisableDefaultConstructor)()));
+	static assert(!__traits(compiles, Expected!(int, string)()));
 }
 
 // Default constructor - enabled
 @system nothrow unittest
 {
-	auto res = Expected!(int, string)();
-	assert(res.hasValue && !res.hasError);
-	assert(res);
-	assert(res.value == int.init);
-	assertThrown!Throwable(res.error);
+	struct EnableDefaultConstructor { static immutable bool enableDefaultConstructor = true; }
+	{
+		auto res = Expected!(int, string, EnableDefaultConstructor)();
+		assert(!res.hasValue && !res.hasError);
+		assert(res);
+		assertThrown!Throwable(res.value);
+		assertThrown!Throwable(res.error);
+		res = 42;
+		assert(res);
+		assert(res.value == 42);
+	}
+
+	{
+		auto res = Expected!(void, string, EnableDefaultConstructor)();
+		assert(!res.hasError);
+		assert(res);
+		assertThrown!Throwable(res.error);
+		res = "foo";
+		assert(res.hasError);
+		assert(!res);
+		assert(res.error == "foo");
+	}
 }
 
 // Default types
@@ -762,8 +828,6 @@ nothrow @nogc unittest
 	assert(res);
 	assert(res.hasValue && !res.hasError);
 	assert(res.value == 42);
-	res = 43;
-	assert(res.value == 43);
 	res.value = 43;
 	assert(res.value == 43);
 }
@@ -795,9 +859,10 @@ unittest
 // opAssign
 @system nothrow unittest
 {
+	struct EnableDefaultConstructor { static immutable bool enableDefaultConstructor = true; }
 	// value
 	{
-		auto res = Expected!(int, string).init;
+		auto res = Expected!(int, string, EnableDefaultConstructor).init;
 		res = 42;
 		assert(res);
 		assert(res.hasValue && !res.hasError);
@@ -808,7 +873,7 @@ unittest
 
 	// error
 	{
-		auto res = Expected!(int, string)("42");
+		auto res = Expected!(int, string, EnableDefaultConstructor)("42");
 		assert(!res.hasValue && res.hasError);
 		assert(res.error == "42");
 		res = "foo";
