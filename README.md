@@ -23,6 +23,7 @@ Main differences with that are:
 * allows to use same types for `T` and `E`
 * allows to define `Expected` without value (`void` for `T`)
 * provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
+* can enforce result check (with a cost)
 
 ## Features
 
