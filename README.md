@@ -17,20 +17,16 @@ It is also inspired by C++'s proposed [std::expected](https://wg21.link/p0323) a
 
 Similar work is [expectations](http://code.dlang.org/packages/expectations) by Paul Backus.
 
-Main differences with that are:
+## Features
 
 * lightweight, no other external dependencies
+* works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
+* provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
 * allows to use same types for `T` and `E`
 * allows to define `Expected` without value (`void` for `T`)
 * provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
 * can enforce result check (with a cost)
 
-## Features
-
-* works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
-* supports `void` value type
-* behavior configuration using custom `Hook` implementation and Design by introspection paradigm with safe default
-* provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
 
 ## Documentation
 
