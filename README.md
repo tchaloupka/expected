@@ -44,7 +44,52 @@ path/to/adrdox/doc2 --genSearchIndex --genSource -o generated-docs source
 
 ## Example usage
 
-> TODO
+```D
+auto foo(int i) {
+	if (i == 0) return unexpected!int("oops");
+	return expected(42 / i);
+}
+
+auto bar(int i) {
+	if (i == 0) throw new Exception("err");
+	return i-1;
+}
+
+// basic checks
+assert(foo(2));
+assert(foo(2).hasValue);
+assert(!foo(2).hasError);
+assert(foo(2).value == 21);
+
+assert(!foo(0));
+assert(!foo(0).hasValue);
+assert(foo(0).hasError);
+assert(foo(0).error == "oops");
+
+// expected from throwing function
+assert(expected!bar(1) == 0);
+assert(expected!bar(0).error.msg == "err");
+
+// orElse
+assert(foo(2).orElse!(() => 0) == 21);
+assert(foo(0).orElse(100) == 100);
+
+// andThen
+assert(foo(2).andThen(foo(6)) == 7);
+assert(foo(0).andThen(foo(6)).error == "oops");
+
+// map
+assert(foo(2).map!(a => a*2).map!(a => a - 2) == 40);
+assert(foo(0).map!(a => a*2).map!(a => a - 2).error == "oops");
+
+// mapError
+assert(foo(0).mapError!(e => "OOPS").error == "OOPS");
+assert(foo(2).mapError!(e => "OOPS") == 21);
+
+// mapOrElse
+assert(foo(2).mapOrElse!(v => v*2, e => 0) == 42);
+assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
+```
 
 ## Instalation
 
