@@ -32,7 +32,7 @@ $(LREF Expected):
 $(BOOKTABLE ,
     $(TR $(TD $(LREF Abort)) $(TD
         fails every incorrect operation with a call to `assert(0)`.
-		It is the default third parameter, i.e. `Expected!short` is the same as
+        It is the default third parameter, i.e. `Expected!short` is the same as
         $(D Expected!(short, string, Abort)).
     ))
     $(TR $(TD $(LREF Throw)) $(TD
@@ -69,12 +69,63 @@ Author: Tomáš Chaloupka
 +/
 
 //TODO: collect errno function call - see https://dlang.org/phobos/std_exception.html#ErrnoException
-//TODO: documentation and usage examples
 //TODO: ability to enforce error handling (via refcounted payload)
 
 module expected;
 
-version (unittest) import std.exception : assertThrown;
+/// Basic usage
+@safe unittest
+{
+	auto foo(int i) {
+		if (i == 0) return unexpected!int("oops");
+		return expected(42 / i);
+	}
+
+	auto bar(int i) {
+		if (i == 0) throw new Exception("err");
+		return i-1;
+	}
+
+	// basic checks
+	assert(foo(2));
+	assert(foo(2).hasValue);
+	assert(!foo(2).hasError);
+	assert(foo(2).value == 21);
+
+	assert(!foo(0));
+	assert(!foo(0).hasValue);
+	assert(foo(0).hasError);
+	assert(foo(0).error == "oops");
+
+	// expected from throwing function
+	assert(expected!bar(1) == 0);
+	assert(expected!bar(0).error.msg == "err");
+
+	// orElse
+	assert(foo(2).orElse!(() => 0) == 21);
+	assert(foo(0).orElse(100) == 100);
+
+	// andThen
+	assert(foo(2).andThen(foo(6)) == 7);
+	assert(foo(0).andThen(foo(6)).error == "oops");
+
+	// map
+	assert(foo(2).map!(a => a*2).map!(a => a - 2) == 40);
+	assert(foo(0).map!(a => a*2).map!(a => a - 2).error == "oops");
+
+	// mapError
+	assert(foo(0).mapError!(e => "OOPS").error == "OOPS");
+	assert(foo(2).mapError!(e => "OOPS") == 21);
+
+	// mapOrElse
+	assert(foo(2).mapOrElse!(v => v*2, e => 0) == 42);
+	assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
+}
+
+version (unittest) {
+	import std.algorithm : reverse;
+	import std.exception : assertThrown;
+}
 
 @safe:
 
@@ -794,16 +845,16 @@ template map(alias op, Hook = Abort)
 unittest
 {
 	{
-		assert(expected(42).map!((a) => a/2).value == 21);
+		assert(expected(42).map!(a => a/2).value == 21);
 		assert(expected().map!(() => 42).value == 42);
-		assert(unexpected!int("foo").map!((a) => 42).error == "foo");
+		assert(unexpected!int("foo").map!(a => 42).error == "foo");
 		assert(unexpected("foo").map!(() => 42).error == "foo");
 	}
 
 	// remap hook
 	{
 		static struct Hook {}
-		auto res = expected(42).map!((a) => a/2, Hook);
+		auto res = expected(42).map!(a => a/2, Hook);
 		assert(res == 21);
 		static assert(is(typeof(res) == Expected!(int, string, Hook)));
 	}
@@ -847,19 +898,19 @@ template mapError(alias op, Hook = Abort)
 unittest
 {
 	{
-		assert(expected(42).mapError!((e) => e).value == 42);
-		assert(unexpected("foo").mapError!((e) => 42).error == 42);
-		assert(unexpected("foo").mapError!((e) => new Exception(e)).error.msg == "foo");
+		assert(expected(42).mapError!(e => e).value == 42);
+		assert(unexpected("foo").mapError!(e => 42).error == 42);
+		assert(unexpected("foo").mapError!(e => new Exception(e)).error.msg == "foo");
 	}
 
 	// remap hook
 	{
 		static struct Hook {}
-		auto res = expected(42).mapError!((e) => e, Hook);
+		auto res = expected(42).mapError!(e => e, Hook);
 		assert(res == 42);
 		static assert(is(typeof(res) == Expected!(int, string, Hook)));
 
-		auto res2 = unexpected!int("foo").mapError!((e) => "bar", Hook);
+		auto res2 = unexpected!int("foo").mapError!(e => "bar", Hook);
 		assert(res2.error == "bar");
 		static assert(is(typeof(res2) == Expected!(int, string, Hook)));
 	}
@@ -911,10 +962,10 @@ template mapOrElse(alias valueOp, alias errorOp)
 ///
 unittest
 {
-	assert(expected(42).mapOrElse!((v) => v/2, (e) => 0) == 21);
-	assert(expected().mapOrElse!(() => true, (e) => false));
-	assert(unexpected!int("foo").mapOrElse!((v) => v/2, (e) => 42) == 42);
-	assert(!unexpected("foo").mapOrElse!(() => true, (e) => false));
+	assert(expected(42).mapOrElse!(v => v/2, e => 0) == 21);
+	assert(expected().mapOrElse!(() => true, e => false));
+	assert(unexpected!int("foo").mapOrElse!(v => v/2, e => 42) == 42);
+	assert(!unexpected("foo").mapOrElse!(() => true, e => false));
 }
 
 // -- global tests --
