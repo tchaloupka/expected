@@ -33,7 +33,7 @@ $(LREF Expected):
 $(BOOKTABLE ,
     $(TR $(TD $(LREF Abort)) $(TD
         fails every incorrect operation with a call to `assert(0)`.
-        It is the default third parameter, i.e. `Expected!short` is the same as
+        It is the default third parameter, i.e. $(D Expected!short) is the same as
         $(D Expected!(short, string, Abort)).
     ))
     $(TR $(TD $(LREF Throw)) $(TD
@@ -47,36 +47,22 @@ may define and their influence over the behavior of the `Checked` type using it.
 In the table, `hook` is an alias for `Hook` if the type `Hook` does not
 introduce any state, or an object of type `Hook` otherwise.
 
-$(TABLE
-    $(TR $(TH Hook member) $(TH Semantics in Expected!(T, E, Hook))
-    )
-    $(TR $(TD `enableDefaultConstructor`) $(TD If defined, $(LREF Expected) would have
-    enabled or disabled default constructor based on it's `bool` value. Default
-    constructor is disabled by default. `opAssign` for value and error types is
-    generated if default constructor is enabled)
-    )
-    $(TR $(TD `enableCopyConstructor`) $(TD If defined, $(LREF Expected) would have
-    enabled or disabled copy constructor based on it's `bool` value. It is
-    enabled by default. When disabled, it enables automatic check if the result was
-    checked either for value or error. When not checked it calls $(D hook.onUnchecked)
-    if provided.
+$(TABLE_ROWS
+    * + Hook member
+      + Semantics in Expected!(T, E, Hook)
+    * - `enableDefaultConstructor`
+      - If defined, $(LREF Expected) would have enabled or disabled default constructor based on it's `bool` value. Default constructor is disabled by default. `opAssign` for value and error types is generated if default constructor is enabled.
+    * - `enableCopyConstructor`
+      - If defined, $(LREF Expected) would have enabled or disabled copy constructor based on it's `bool` value. It is enabled by default. When disabled, it enables automatic check if the result was checked either for value or error. When not checked it calls $(D hook.onUnchecked) if provided.
 
-    $(WARNING As currently it's not possible to change internal state of `const or immutable`
-	object, automatic checking would't work on these. Hopefully with `__mutable` proposal)
-    )
-    $(TR $(TD `onAccessEmptyValue`) $(TD If value is accessed on unitialized
-    $(LREF Expected) or $(LREF Expected) with error value, $(D hook.onAccessEmptyValue!E(err))
-    is called. If hook doesn't implement the handler, `T.init` is returned.)
-    )
-    $(TR $(TD `onAccessEmptyError`) $(TD If error is accessed on unitialized
-    $(LREF Expected) or $(LREF Expected) with value, $(D hook.onAccessEmptyError())
-    is called. If hook doesn't implement the handler, `E.init` is returned.)
-    )
-    $(TR $(TD `onUnchecked`) $(TD If the result of $(LREF Expected) isn't checked,
-    $(D hook.onUnchecked()) is called to handle the error.
-    If hook doesn't implement the handler, assert is thrown.
-    $(NOTE) that `hook.enableCopyConstructor` must be false for checks to work.)
-    )
+        $(NOTE WARNING: As currently it's not possible to change internal state of `const` or `immutable` object, automatic checking would't work on these. Hopefully with `__mutable` proposal..)
+    * - `onAccessEmptyValue`
+      - If value is accessed on unitialized $(LREF Expected) or $(LREF Expected) with error value, $(D hook.onAccessEmptyValue!E(err)) is called. If hook doesn't implement the handler, `T.init` is returned.
+    * - `onAccessEmptyError`
+      - If error is accessed on unitialized $(LREF Expected) or $(LREF Expected) with value, $(D hook.onAccessEmptyError()) is called. If hook doesn't implement the handler, `E.init` is returned.
+    * - `onUnchecked`
+      - If the result of $(LREF Expected) isn't checked, $(D hook.onUnchecked()) is called to handle the error. If hook doesn't implement the handler, assert is thrown.
+        $(NOTE Note that `hook.enableCopyConstructor` must be false for checks to work.)
 )
 
 License: BSL-1.0
@@ -647,6 +633,12 @@ unittest
 	static assert(!isCopyConstructorEnabled!Bar);
 }
 
+// just a helper to determine check behavior
+private template isChecked(Hook)
+{
+	enum isChecked = !isCopyConstructorEnabled!Hook;
+}
+
 /++ Template to determine if hook provides custom handler for case
 	when the $(LREF Expected) result is not checked.
 
@@ -668,11 +660,6 @@ template hasOnUnchecked(Hook)
 		enum hasOnUnchecked = true;
 	}
 	else enum hasOnUnchecked = false;
-}
-
-template isChecked(Hook)
-{
-	enum isChecked = !isCopyConstructorEnabled!Hook;
 }
 
 ///
