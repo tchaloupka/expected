@@ -42,7 +42,7 @@ jobs:
         - unzip master.zip
         - pushd adrdox-master && make && popd
         - export PATH=$PATH:$PWD/adrdox-master
-        - doc2 --genSearchIndex --genSource -o generated-docs src
+        - doc2 --genSearchIndex --genSource -o generated-docs source
       deploy: &pages
         provider: pages
         skip_cleanup: true
