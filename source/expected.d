@@ -17,6 +17,57 @@ Main differences with that are:
 * allows to define `Expected` without value (`void` for `T`)
 * provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
 
+Default type for error is `string`, i.e. `Expected!int` is the same as `Expected!(int, string)`
+
+`Expected` has customizable behavior with the help of a third type parameter,
+`Hook`. Depending on what methods `Hook` defines, core operations on the
+`Expected` may be verified or completely redefined.
+If `Hook` defines no method at all and carries no state, there is no change in
+default behavior.
+This module provides a few predefined hooks (below) that add useful behavior to
+`Expected`:
+
+$(BOOKTABLE ,
+    $(TR $(TD $(LREF Abort)) $(TD
+        fails every incorrect operation with a call to `assert(0)`.
+		It is the default third parameter, i.e. `Expected!short` is the same as
+        $(D Expected!(short, string, Abort)).
+    ))
+    $(TR $(TD $(LREF Throw)) $(TD
+        fails every incorrect operation by throwing an exception.
+    ))
+)
+
+The hook's members are looked up statically in a Design by Introspection manner
+and are all optional. The table below illustrates the members that a hook type
+may define and their influence over the behavior of the `Checked` type using it.
+In the table, `hook` is an alias for `Hook` if the type `Hook` does not
+introduce any state, or an object of type `Hook` otherwise.
+
+$(TABLE ,
+    $(TR $(TH `Hook` member) $(TH Semantics in $(D Expected!(T, E, Hook)))
+    )
+    $(TR $(TD `enableDefaultConstructor`) $(TD If defined, `Expected` would have
+    enabled or disabled default constructor based on it's `bool` value. Default
+    constructor is disabled by default.
+
+    `Expected` would have generated `opAssign` for value and error types,
+    if default constructor is enabled)
+    )
+    $(TR $(TD `onAccessEmptyValue`) $(TD If value is accessed on unitialized
+    `Expected` or `Expected` with error value, $(D hook.onAccessEmptyValue!E(err))
+    is called.
+
+    If hook doesn't implement the handler, `T.init` is returned.)
+    )
+    $(TR $(TD `onAccessEmptyError`) $(TD If error is accessed on unitialized
+    `Expected` or `Expected` with value, $(D hook.onAccessEmptyError())
+    is called.
+
+    If hook doesn't implement the handler, `E.init` is returned.)
+    )
+)
+
 License: BSL-1.0
 Author: Tomáš Chaloupka
 +/
@@ -32,9 +83,15 @@ version (unittest) import std.exception : assertThrown;
 @safe:
 
 /++
-	TODO: docs
+	`Expected!(T, E)` is a type that represents either success or failure.
 
+	Type `T` is used for success value.
+	If `T` is `void`, then `Expected` can only hold error value and is considered a success when there is no error value.
+
+	Type `E` is used for error value.
 	The default type for the error value is `string`.
+
+	Default behavior of `Expected` can be modified by the `Hook` template parameter.
 
 	Params:
 		T    = represents the expected value
@@ -198,23 +255,21 @@ struct Expected(T, E = string, Hook = Abort)
 		@property bool hasValue()() const { return state == State.value; }
 
 		/++
-			Returns the expected value if there is one. Otherwise, throws an
-			exception or asserts (based on the provided `Hook` implementation).
-			In case there is no value nor error specified, it asserts.
+			Returns the expected value if there is one.
 
-			Throws:
-				If `E` inherits from `Throwable`, the error value is thrown.
-				Otherwise, an [Unexpected] instance containing the error value is
-				thrown.
+			With default `Abort` hook, it asserts when there is no value.
+			It calls hook's `onAccessEmptyValue` otherwise.
+
+			It returns `T.init` when hook doesn't provide `onAccessEmptyValue`.
 		+/
-		@property ref inout(T) value() inout
+		@property auto ref inout(T) value() inout
 		{
-			//TODO: hook
-			assert(state != State.empty);
-			assert(state == State.value);
-			// static if (is(E : Throwable)) throw error();
-			// else throw new Unexpected!E(error());
-
+			if (state != State.value)
+			{
+				static if (hasOnAccessEmptyValue!(Hook, E))
+					__traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? trustedGetError() : E.init);
+				else return T.init;
+			}
 			return trustedGetValue();
 		}
 	}
@@ -224,12 +279,18 @@ struct Expected(T, E = string, Hook = Abort)
 
 	/++
 		Returns the error value. May only be called when `hasValue` returns `false`.
-	+/
-	@property ref inout(E) error() inout
-	{
-		assert(state != State.empty);
-		assert(state == State.error);
 
+		If there is no error value, it calls hook's `onAccessEmptyError`.
+
+		It returns `E.init` when hook doesn't provide `onAccessEmptyError`.
+	+/
+	@property auto ref inout(E) error() inout
+	{
+		if (state != State.error)
+		{
+			static if (hasOnAccessEmptyError!Hook) __traits(getMember, Hook, "onAccessEmptyError")();
+			else return E.init;
+		}
 		return trustedGetError;
 	}
 
@@ -244,7 +305,7 @@ struct Expected(T, E = string, Hook = Abort)
 		@property bool empty() const { return state != State.value; }
 
 		/// ditto
-		@property ref inout(T) front() inout { return value; }
+		@property auto ref inout(T) front() inout { return value; }
 
 		/// ditto
 		void popFront() { state = State.empty; }
@@ -337,18 +398,136 @@ template isDefaultConstructorEnabled(Hook)
 ///
 unittest
 {
-	static struct Foo {}
-	static struct Bar { static immutable bool enableDefaultConstructor = true; }
+	struct Foo {}
+	struct Bar { static immutable bool enableDefaultConstructor = true; }
 	static assert(!isDefaultConstructorEnabled!Foo);
 	static assert(isDefaultConstructorEnabled!Bar);
 }
 
-/++ TODO
+/++ Template to determine if hook provides function called on empty value.
++/
+template hasOnAccessEmptyValue(Hook, E)
+{
+	static if (__traits(hasMember, Hook, "onAccessEmptyValue"))
+	{
+		static assert(
+			is(typeof(__traits(getMember, Hook, "onAccessEmptyValue")(E.init))),
+			"Hook's onAccessEmptyValue is expected to be callable with error value type"
+		);
+		enum hasOnAccessEmptyValue = true;
+	}
+	else enum hasOnAccessEmptyValue = false;
+}
+
+///
+unittest
+{
+	struct Foo {}
+	struct Bar { static void onAccessEmptyValue(E)(E err) {} }
+	static assert(!hasOnAccessEmptyValue!(Foo, string));
+	static assert(hasOnAccessEmptyValue!(Bar, string));
+}
+
+/++ Template to determine if hook provides function called on empty error.
++/
+template hasOnAccessEmptyError(Hook)
+{
+	static if (__traits(hasMember, Hook, "onAccessEmptyError"))
+	{
+		static assert(
+			is(typeof(__traits(getMember, Hook, "onAccessEmptyError")())),
+			"Hook's onAccessEmptyValue is expected to be callable with no arguments"
+		);
+		enum hasOnAccessEmptyError = true;
+	}
+	else enum hasOnAccessEmptyError = false;
+}
+
+///
+unittest
+{
+	struct Foo {}
+	struct Bar { static void onAccessEmptyError() {} }
+	static assert(!hasOnAccessEmptyError!Foo);
+	static assert(hasOnAccessEmptyError!Bar);
+}
+
+/++ Default hook implementation for `Expected`
 +/
 struct Abort
 {
 static:
+	/++ Default constructor for `Expected` is disabled
+		Same with the `opAssign`, so `Expected` can be only constructed
+		once and not modified afterwards.
+	+/
 	immutable bool enableDefaultConstructor = false;
+
+	/// Handler for case when empty value is accessed
+	void onAccessEmptyValue(E)(E err) nothrow @nogc
+	{
+		assert(0, "Can't access value of unexpected");
+	}
+
+	/// Handler for case when empty error is accessed
+	void onAccessEmptyError() nothrow @nogc
+	{
+		assert(0, "Can't access error on expected value");
+	}
+}
+
+@system unittest
+{
+	static assert(!isDefaultConstructorEnabled!Abort);
+	static assert(hasOnAccessEmptyValue!(Abort, string));
+	static assert(hasOnAccessEmptyValue!(Abort, int));
+	static assert(hasOnAccessEmptyError!Abort);
+
+	assertThrown!Throwable(expected(42).error);
+	assertThrown!Throwable(unexpected!int("foo").value);
+}
+
+/++ Hook implementation that throws exceptions instead of default assert behavior.
++/
+struct Throw
+{
+static:
+
+	/++ Default constructor for `Expected` is disabled
+		Same with the `opAssign`, so `Expected` can be only constructed
+		once and not modified afterwards.
+	+/
+	immutable bool enableDefaultConstructor = false;
+
+	/++ Handler for case when empty value is accessed
+
+		Throws:
+			If `E` inherits from `Throwable`, the error value is thrown.
+			Otherwise, an [Unexpected] instance containing the error value is
+			thrown.
+	+/
+	void onAccessEmptyValue(E)(E err)
+	{
+		static if(is(E : Throwable)) throw err;
+		else throw new Unexpected!E(err);
+	}
+
+	/// Handler for case when empty error is accessed
+	void onAccessEmptyError()
+	{
+		throw new Unexpected!string("Can't access error on expected value");
+	}
+}
+
+unittest
+{
+	static assert(!isDefaultConstructorEnabled!Throw);
+	static assert(hasOnAccessEmptyValue!(Throw, string));
+	static assert(hasOnAccessEmptyValue!(Throw, int));
+	static assert(hasOnAccessEmptyError!Throw);
+
+	assertThrown!(Unexpected!string)(expected!(string, Throw)(42).error);
+	assertThrown!(Unexpected!string)(unexpected!(int, Throw)("foo").value);
 }
 
 /// An exception that represents an error value.
@@ -757,8 +936,8 @@ unittest
 		auto res = Expected!(int, string, EnableDefaultConstructor).init;
 		assert(!res.hasValue && !res.hasError);
 		assert(res);
-		assertThrown!Throwable(res.value);
-		assertThrown!Throwable(res.error);
+		assert(res.value == 0);
+		assert(res.error is null);
 		res = 42;
 		assert(res.value == 42);
 	}
@@ -782,7 +961,7 @@ unittest
 		assert(!res.hasError);
 		assert(res.state == Expected!(void, string, EnableDefaultConstructor).State.empty);
 		assert(res);
-		assertThrown!Throwable(res.error);
+		assert(res.error is null);
 		res = "foo";
 		assert(res.error == "foo");
 	}
@@ -802,8 +981,8 @@ unittest
 		auto res = Expected!(int, string, EnableDefaultConstructor)();
 		assert(!res.hasValue && !res.hasError);
 		assert(res);
-		assertThrown!Throwable(res.value);
-		assertThrown!Throwable(res.error);
+		assert(res.value == 0);
+		assert(res.error is null);
 		res = 42;
 		assert(res);
 		assert(res.value == 42);
@@ -813,7 +992,7 @@ unittest
 		auto res = Expected!(void, string, EnableDefaultConstructor)();
 		assert(!res.hasError);
 		assert(res);
-		assertThrown!Throwable(res.error);
+		assert(res.error is null);
 		res = "foo";
 		assert(res.hasError);
 		assert(!res);
