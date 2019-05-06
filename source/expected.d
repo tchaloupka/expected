@@ -98,6 +98,11 @@ module expected;
 	assert(foo(0).hasError);
 	assert(foo(0).error == "oops");
 
+	// void result
+	assert(Expected!(void)()); // no error -> success
+	assert(!Expected!(void)().hasError);
+	// assert(unexpected("foo").value); // doesn't have hasValue and value properties
+
 	// expected from throwing function
 	assert(expected!bar(1) == 0);
 	assert(expected!bar(0).error.msg == "err");
