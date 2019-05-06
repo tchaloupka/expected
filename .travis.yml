@@ -1,6 +1,13 @@
 language: d
 sudo: false
 
+branches:
+  only:
+    - master
+
+notifications:
+  email: true
+
 d:
   - dmd-2.085.1
   - dmd-2.084.1
@@ -24,14 +31,26 @@ d:
   - ldc-1.6.0
   - dmd-beta
 
-script:
-  - dub test -b unittest-cov --compiler=${DC}
+jobs:
+  include:
+    - stage: test
+      script:
+        - dub test -b unittest-cov --compiler=${DC}
+    - stage: deploy
+      script:
+        - wget https://github.com/adamdruppe/adrdox/archive/master.zip
+        - unzip master.zip
+        - pushd adrdox-master && make && popd
+        - export PATH=$PATH:$PWD/adrdox-master
+        - doc2 --genSearchIndex --genSource -o generated-docs src
+      deploy: &pages
+        provider: pages
+        skip_cleanup: true
+        github_token: $GITHUB_TOKEN  # Set in the settings page of your repository, as a secure variable
+        keep_history: true
+        local_dir: generated-docs
+        on:
+          branch: master
 
-branches:
-  only:
-    - master
-
-notifications:
-email: true
 after_success:
   - bash <(curl -s https://codecov.io/bash)
