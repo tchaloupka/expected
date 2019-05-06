@@ -17,6 +17,7 @@ $(LIST
 * allows to use same types for `T` and `E`
 * allows to define $(LREF Expected) without value (`void` for `T`)
 * provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection.
+* can enforce result check (with a cost)
 )
 
 Default type for error is `string`, i.e. `Expected!int` is the same as `Expected!(int, string)`
@@ -54,6 +55,15 @@ $(TABLE
     constructor is disabled by default. `opAssign` for value and error types is
     generated if default constructor is enabled)
     )
+    $(TR $(TD `enableCopyConstructor`) $(TD If defined, $(LREF Expected) would have
+    enabled or disabled copy constructor based on it's `bool` value. It is
+    enabled by default. When disabled, it enables automatic check if the result was
+    checked either for value or error. When not checked it calls $(D hook.onUnchecked)
+    if provided.
+
+    $(WARNING As currently it's not possible to change internal state of `const or immutable`
+	object, automatic checking would't work on these. Hopefully with `__mutable` proposal)
+    )
     $(TR $(TD `onAccessEmptyValue`) $(TD If value is accessed on unitialized
     $(LREF Expected) or $(LREF Expected) with error value, $(D hook.onAccessEmptyValue!E(err))
     is called. If hook doesn't implement the handler, `T.init` is returned.)
@@ -61,6 +71,11 @@ $(TABLE
     $(TR $(TD `onAccessEmptyError`) $(TD If error is accessed on unitialized
     $(LREF Expected) or $(LREF Expected) with value, $(D hook.onAccessEmptyError())
     is called. If hook doesn't implement the handler, `E.init` is returned.)
+    )
+    $(TR $(TD `onUnchecked`) $(TD If the result of $(LREF Expected) isn't checked,
+    $(D hook.onUnchecked()) is called to handle the error.
+    If hook doesn't implement the handler, assert is thrown.
+    $(NOTE) that `hook.enableCopyConstructor` must be false for checks to work.)
     )
 )
 
@@ -125,6 +140,7 @@ module expected;
 version (unittest) {
 	import std.algorithm : reverse;
 	import std.exception : assertThrown;
+	import std.stdio : writeln;
 }
 
 @safe:
@@ -240,6 +256,19 @@ struct Expected(T, E = string, Hook = Abort)
 
 	static if (!is(T == void) && !isDefaultConstructorEnabled!Hook) @disable this();
 
+	static if (!isCopyConstructorEnabled!Hook) @disable this(this);
+	static if (isChecked!Hook)
+	{
+		~this()
+		{
+			if (!checked)
+			{
+				static if (hasOnUnchecked!Hook) __traits(getMember, Hook, "onUnchecked")();
+				else assert(0, "unchecked result");
+			}
+		}
+	}
+
 	static if (isDefaultConstructorEnabled!Hook)
 	{
 		static foreach (i, CT; Types)
@@ -260,99 +289,184 @@ struct Expected(T, E = string, Hook = Abort)
 		}
 	}
 
-	/++ Implicit conversion to bool.
-		Returns: `true` if there is no error set, `false` otherwise.
-	+/
-	bool opCast(T)() const if (is(T == bool)) { return !this.hasError; }
-
-	static if (!is(T == void))
-	{
-		/++ Checks whether this $(LREF Expected) object contains a specific expected value.
-
-			* `opEquals` for the value is available only when `T != void`.
-			* `opEquals` for the error isn't available, use equality test for $(LREF Expected) in that case.
+	//damn these are ugly :(
+	static if (!isChecked!Hook) {
+		/++ Implicit conversion to bool.
+			Returns: `true` if there is no error set, `false` otherwise.
 		+/
-		bool opEquals()(const auto ref T rhs) const
-		{
-			return hasValue && value == rhs;
-		}
-	}
-
-	/// Checks whether this $(LREF Expected) object and `rhs` contain the same expected value or error value.
-	bool opEquals()(const auto ref Expected!(T, E, Hook) rhs) const
-	{
-		if (state != rhs.state) return false;
-		static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
-		return error == rhs.error;
-	}
-
-	/++ Calculates the hash value of the $(LREF Expected) in a way that iff it has a value,
-		it returns hash of the value.
-		Hash is computed using internal state and storage of the $(LREF Expected) otherwise.
-	+/
-	size_t toHash()() const nothrow
-	{
-		static if (!is(T == void)) { if (hasValue) return value.hashOf; }
-		return storage.hashOf(state);
+		bool opCast(T)() const if (is(T == bool)) { return !this.hasError; }
+	} else {
+		/// ditto
+		bool opCast(T)() if (is(T == bool)) { return !this.hasError; }
 	}
 
 	static if (!is(T == void))
 	{
-		/// Checks if $(LREF Expected) has value
-		@property bool hasValue()() const { return state == State.value; }
+		static if (!isChecked!Hook) {
+			/++ Checks whether this $(LREF Expected) object contains a specific expected value.
 
-		/++
-			Returns the expected value if there is one.
-
-			With default `Abort` hook, it asserts when there is no value.
-			It calls hook's `onAccessEmptyValue` otherwise.
-
-			It returns `T.init` when hook doesn't provide `onAccessEmptyValue`.
-		+/
-		@property auto ref inout(T) value() inout
-		{
-			if (state != State.value)
+				* `opEquals` for the value is available only when `T != void`.
+				* `opEquals` for the error isn't available, use equality test for $(LREF Expected) in that case.
+			+/
+			bool opEquals()(const auto ref T rhs) const
 			{
-				static if (hasOnAccessEmptyValue!(Hook, E))
-					__traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? trustedGetError() : E.init);
-				else return T.init;
+				return hasValue && value == rhs;
 			}
-			return trustedGetValue();
+		} else {
+			/// ditto
+			bool opEquals()(auto ref T rhs) { return hasValue && value == rhs; }
 		}
 	}
 
-	/// Checks if $(LREF Expected) has error
-	@property bool hasError()() const { return state == State.error; }
-
-	/++
-		Returns the error value. May only be called when `hasValue` returns `false`.
-
-		If there is no error value, it calls hook's `onAccessEmptyError`.
-
-		It returns `E.init` when hook doesn't provide `onAccessEmptyError`.
-	+/
-	@property auto ref inout(E) error() inout
-	{
-		if (state != State.error)
+	static if (!isChecked!Hook) {
+		/// Checks whether this $(LREF Expected) object and `rhs` contain the same expected value or error value.
+		bool opEquals()(const auto ref Expected!(T, E, Hook) rhs) const
 		{
-			static if (hasOnAccessEmptyError!Hook) __traits(getMember, Hook, "onAccessEmptyError")();
-			else return E.init;
+			if (state != rhs.state) return false;
+			static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
+			return error == rhs.error;
 		}
-		return trustedGetError;
+	} else {
+		/// ditto
+		bool opEquals()(auto ref Expected!(T, E, Hook) rhs)
+		{
+			if (state != rhs.state) return false;
+			static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
+			return error == rhs.error;
+		}
+	}
+
+	static if (!isChecked!Hook) {
+		/++ Calculates the hash value of the $(LREF Expected) in a way that iff it has a value,
+			it returns hash of the value.
+			Hash is computed using internal state and storage of the $(LREF Expected) otherwise.
+		+/
+		size_t toHash()() const nothrow
+		{
+			static if (!is(T == void)) { if (hasValue) return value.hashOf; }
+			return storage.hashOf(state);
+		}
+	} else {
+		/// ditto
+		size_t toHash()() nothrow
+		{
+			static if (!is(T == void)) { if (hasValue) return value.hashOf; }
+			return storage.hashOf(state);
+		}
+	}
+
+	static if (!is(T == void))
+	{
+		static if (!isChecked!Hook) {
+			/// Checks if $(LREF Expected) has value
+			@property bool hasValue()() const { return state == State.value; }
+		}
+		else {
+			/// ditto
+			@property bool hasValue()()
+			{
+				static if (!isCopyConstructorEnabled!Hook) checked = true;
+				return state == State.value;
+			}
+		}
+
+		static if (!isChecked!Hook) {
+			/++
+				Returns the expected value if there is one.
+
+				With default `Abort` hook, it asserts when there is no value.
+				It calls hook's `onAccessEmptyValue` otherwise.
+
+				It returns `T.init` when hook doesn't provide `onAccessEmptyValue`.
+			+/
+			@property auto ref inout(T) value() inout
+			{
+				if (state != State.value)
+				{
+					static if (hasOnAccessEmptyValue!(Hook, E))
+						__traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? trustedGetError() : E.init);
+					else return T.init;
+				}
+				return trustedGetValue();
+			}
+		} else {
+			@property auto ref T value()
+			{
+				static if (!isCopyConstructorEnabled!Hook) checked = true;
+
+				if (state != State.value)
+				{
+					static if (hasOnAccessEmptyValue!(Hook, E))
+						__traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? trustedGetError() : E.init);
+					else return T.init;
+				}
+				return trustedGetValue();
+			}
+		}
+	}
+
+	static if (!isChecked!Hook) {
+		/// Checks if $(LREF Expected) has error
+		@property bool hasError()() const { return state == State.error; }
+	} else {
+		/// ditto
+		@property bool hasError()()
+		{
+			static if (!isCopyConstructorEnabled!Hook) checked = true;
+			return state == State.error;
+		}
+	}
+
+	static if (!isChecked!Hook) {
+		/++
+			Returns the error value. May only be called when `hasValue` returns `false`.
+
+			If there is no error value, it calls hook's `onAccessEmptyError`.
+
+			It returns `E.init` when hook doesn't provide `onAccessEmptyError`.
+		+/
+		@property auto ref inout(E) error() inout
+		{
+			if (state != State.error)
+			{
+				static if (hasOnAccessEmptyError!Hook) __traits(getMember, Hook, "onAccessEmptyError")();
+				else return E.init;
+			}
+			return trustedGetError;
+		}
+	} else {
+		@property auto ref E error()
+		{
+			static if (!isCopyConstructorEnabled!Hook) checked = true;
+
+			if (state != State.error)
+			{
+				static if (hasOnAccessEmptyError!Hook) __traits(getMember, Hook, "onAccessEmptyError")();
+				else return E.init;
+			}
+			return trustedGetError;
+		}
 	}
 
 	// range interface
 	static if (!is(T == void))
 	{
-		/++ Range interface defined by `empty`, `front`, `popFront`.
-			Yields one value if $(LREF Expected) has value.
+		static if (!isChecked!Hook) {
+			/++ Range interface defined by `empty`, `front`, `popFront`.
+				Yields one value if $(LREF Expected) has value.
 
-			If `T == void`, range interface isn't defined.
-		+/
-		@property bool empty() const { return state != State.value; }
+				If `T == void`, range interface isn't defined.
+			+/
+			@property bool empty() const { return state != State.value; }
 
-		/// ditto
-		@property auto ref inout(T) front() inout { return value; }
+			/// ditto
+			@property auto ref inout(T) front() inout { return value; }
+		} else {
+			@property bool empty() { checked = true; return state != State.value; }
+
+			/// ditto
+			@property auto ref T front() { return value; }
+		}
 
 		/// ditto
 		void popFront() { state = State.empty; }
@@ -409,6 +523,7 @@ struct Expected(T, E = string, Hook = Abort)
 
 	Storage storage;
 	State state = State.empty;
+	static if (!isCopyConstructorEnabled!Hook) bool checked = false;
 
 	void setState(MT, Flag!"force" force = No.force)()
 	{
@@ -497,6 +612,93 @@ unittest
 	struct Bar { static void onAccessEmptyError() {} }
 	static assert(!hasOnAccessEmptyError!Foo);
 	static assert(hasOnAccessEmptyError!Bar);
+}
+
+/++ Template to determine if hook enables or disables copy constructor.
+
+	It is enabled by default.
+
+	See $(LREF hasOnUnchecked) handler, which can be used in combination with disabled
+	copy constructor to enforce result check.
+
+	$(WARNING If copy constructor is disabled, it severely limits function chaining
+	as $(LREF Expected) needs to be passed as rvalue in that case.)
++/
+template isCopyConstructorEnabled(Hook)
+{
+	static if (__traits(hasMember, Hook, "enableCopyConstructor"))
+	{
+		static assert(
+			is(typeof(__traits(getMember, Hook, "enableCopyConstructor")) : bool),
+			"Hook's enableCopyConstructor is expected to be of type bool"
+		);
+		static if (__traits(getMember, Hook, "enableCopyConstructor")) enum isCopyConstructorEnabled = true;
+		else enum isCopyConstructorEnabled = false;
+	}
+	else enum isCopyConstructorEnabled = true;
+}
+
+///
+unittest
+{
+	struct Foo {}
+	struct Bar { static immutable bool enableCopyConstructor = false; }
+	static assert(isCopyConstructorEnabled!Foo);
+	static assert(!isCopyConstructorEnabled!Bar);
+}
+
+/++ Template to determine if hook provides custom handler for case
+	when the $(LREF Expected) result is not checked.
+
+	For this to work it currently also has to pass $(LREF isCopyConstructorEnabled)
+	as this is implemented by simple flag controled on $(LREF Expected) destructor.
++/
+template hasOnUnchecked(Hook)
+{
+	static if (__traits(hasMember, Hook, "onUnchecked"))
+	{
+		static assert(
+			is(typeof(__traits(getMember, Hook, "onUnchecked")())),
+			"Hook's onUnchecked is expected to be callable with no arguments"
+		);
+		static assert(
+			!isCopyConstructorEnabled!Hook,
+			"For unchecked check to work, it is currently needed to also disable copy constructor"
+		);
+		enum hasOnUnchecked = true;
+	}
+	else enum hasOnUnchecked = false;
+}
+
+template isChecked(Hook)
+{
+	enum isChecked = !isCopyConstructorEnabled!Hook;
+}
+
+///
+@system unittest
+{
+	struct Foo {}
+	struct Bar { static void onUnchecked() { throw new Exception("result unchecked"); } }
+	struct Hook {
+		static immutable bool enableCopyConstructor = false;
+		static void onUnchecked() @safe { throw new Exception("result unchecked"); }
+	}
+
+	// template checks
+	static assert(!hasOnUnchecked!Foo);
+	static assert(!__traits(compiles, hasOnUnchecked!Bar)); // missing disabled constructor
+	static assert(hasOnUnchecked!Hook);
+
+	// copy constructor
+	auto exp = expected!(string, Hook)(42);
+	auto exp2 = unexpected!(int, Hook)("foo");
+	static assert(!__traits(compiles, exp.andThen(expected!(string, Hook)(42)))); // disabled cc
+	assert(exp.andThen(exp2).error == "foo"); // passed by ref so no this(this) called
+
+	// check for checked result
+	assertThrown({ expected!(string, Hook)(42); }());
+	assertThrown({ unexpected!(void, Hook)("foo"); }());
 }
 
 /++ Default hook implementation for $(LREF Expected)
@@ -722,10 +924,10 @@ unittest
 		value = The value to return if there isn't an error
 		pred = The predicate to call if the there isn't an error
 +/
-auto ref EX andThen(EX)(auto ref EX exp, lazy EX value)
+auto ref EX andThen(EX)(auto ref EX exp, auto ref EX value)
 	if (is(EX : Expected!(T, E, H), T, E, H))
 {
-	return exp.andThen!value;
+	return exp.hasError ? exp : value;
 }
 
 /// ditto
