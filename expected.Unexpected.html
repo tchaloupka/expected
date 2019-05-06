@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+        <title>Unexpected (expected.Unexpected)</title>
+	<meta charset="utf-8" />
+	<meta content="width=device-width, initial-scale=1" name="viewport" />
+        <link rel="stylesheet" href="style.css" />
+        <script type="text/javascript" src="script.js"></script>
+
+	
+	<link rel="prefetch" href="search-results.html" />
+</head>
+<body>
+	<div id="page-header">
+		<div id="logotype">
+		<span>Documentation</span>
+		<nav>
+			<a href="http://dlang.org/">Dlang.org</a>
+		</nav>
+		</div>
+
+		<form action="search-docs.html" id="search">
+			<input type="search" placeholder="Find a symbol name..." name="searchTerm" />
+			<input type="submit" value="Go" />
+		</form>
+	</div>
+	<div id="page-body">
+		<div id="page-content">
+		<h1>Unexpected</h1><div class="breadcrumbs"><a href="expected.html" class="breadcrumb">expected</a></div><div><div class="documentation-comment synopsis"><div><p>An exception that represents an error value.</p><p>This is used by <a href="expected.Throw.html" class="xref">Throw</a> hook when undefined value or error is
+	accessed on <a href="expected.Expected.html" class="xref">Expected</a></p></div></div></div><div class="annotated-prototype"><div class="aggregate-prototype"><div class="attributes">@<span data-ident="safe" class="name">safe</span> </div><span class="builtin-type">class</span> Unexpected  : Exception(<div class="parameters-list toplevel"><div class="template-parameter-item parameter-item">	<span><span data-ident="T" class="name">T</span></span></div></div>) {<div class="aggregate-member"><a href="expected.Unexpected.error.html"><tt class="highlighted"><span class="hid">T</span></tt> <span class="name">error</span>;</a></div><div class="aggregate-member"><a href="expected.Unexpected.this.html"><span class="lang-feature name">this</span><tt class="highlighted">(<span class="hid">T</span> <span class="hid">value</span>, <span class="type">string</span> <span class="hid">file</span> = <span class="kwrd">__FILE__</span>, <span class="hid">size_t</span> <span class="hid">line</span> = <span class="kwrd">__LINE__</span>)</tt>;</a></div>}</div></div><h2 id="constructors"><a href="#constructors" class="header-anchor">Constructors</a></h2><dl class="member-list constructors"><dt><a href="expected.Unexpected.this.html">this</a><div style="max-width: 67ch;" class="simplified-prototype"><span class="lang-feature name">this</span><tt class="highlighted">(<span class="hid">T</span> <span class="hid">value</span>, <span class="type">string</span> <span class="hid">file</span> = <span class="kwrd">__FILE__</span>, <span class="hid">size_t</span> <span class="hid">line</span> = <span class="kwrd">__LINE__</span>)</tt></div></dt><dd><div><p>Constructs an <tt class="inline-code">Unexpected</tt> exception from an error value.</p></div></dd></dl><h2 id="members"><a href="#members" class="header-anchor">Members</a></h2><h3 id="variable" class="member-list-header hide-from-toc"><a href="#variable" class="header-anchor">Variables</a></h3><dl class="member-list native"><dt><a href="expected.Unexpected.error.html">error</a><div style="max-width: 8ch;" class="simplified-prototype"><tt class="highlighted"><span class="hid">T</span></tt> <span class="name">error</span>;</div></dt><dd><div><p>error value</p></div></dd></dl><div><h2 id="meta"><a href="#meta" class="header-anchor">Meta</a></h2><div class="documentation-comment source-section other-section"><h3 id="source"><a href="#source" class="header-anchor">Source</a></h3><div><p><a href="source/expected.d.html#L534">See Implementation</a><br /></p></div></div></div></div>
+		<div id="page-nav"><a href="expected.html" class="parent">expected</a>
+		<span class="type-separator">classes</span><ul><li><a href="expected.Unexpected.html" class="class current">Unexpected</a></li></ul><span class="type-separator">functions</span><ul><li><a href="expected.andThen.1.html" class="function">andThen</a></li><li><a href="expected.expected.1.html" class="function">expected</a></li><li><a href="expected.orElse.1.html" class="function">orElse</a></li><li><a href="expected.unexpected.html" class="function">unexpected</a></li></ul><span class="type-separator">structs</span><ul><li><a href="expected.Abort.html" class="struct">Abort</a></li><li><a href="expected.Expected.html" class="struct">Expected</a></li><li><a href="expected.Throw.html" class="struct">Throw</a></li></ul><span class="type-separator">templates</span><ul><li><a href="expected.hasOnAccessEmptyError.html" class="template">hasOnAccessEmptyError</a></li><li><a href="expected.hasOnAccessEmptyValue.html" class="template">hasOnAccessEmptyValue</a></li><li><a href="expected.isDefaultConstructorEnabled.html" class="template">isDefaultConstructorEnabled</a></li><li><a href="expected.map.html" class="template">map</a></li><li><a href="expected.mapError.html" class="template">mapError</a></li><li><a href="expected.mapOrElse.html" class="template">mapOrElse</a></li></ul></div>
+	</div>
+	<div id="page-footer">Page generated by <a href="https://github.com/adamdruppe/adrdox">adrdox</a></div>
+</body>
+</html>
