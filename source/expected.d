@@ -1,31 +1,33 @@
 /++
 This module is implementing the Expected idiom.
 
-See the (Andrei Alexandrescu’s talk (Systematic Error Handling in C++)[http://channel9.msdn.com/Shows/Going+Deep/C-and-Beyond-2012-Andrei-Alexandrescu-Systematic-Error-Handling-in-C]
-and (its slides)[https://skydrive.live.com/?cid=f1b8ff18a2aec5c5&id=F1B8FF18A2AEC5C5!1158].
+See the [Andrei Alexandrescu’s talk (Systematic Error Handling in C++](http://channel9.msdn.com/Shows/Going+Deep/C-and-Beyond-2012-Andrei-Alexandrescu-Systematic-Error-Handling-in-C)
+and [its slides](https://skydrive.live.com/?cid=f1b8ff18a2aec5c5&id=F1B8FF18A2AEC5C5!1158).
 
 Or more recent ["Expect the Expected"](https://www.youtube.com/watch?v=nVzgkepAg5Y) by Andrei Alexandrescu for further background.
 
-It is also inspired by C++'s proposed [std::expected](https://wg21.link/p0323).
+It is also inspired by C++'s proposed [std::expected](https://wg21.link/p0323) and [Rust's](https://www.rust-lang.org/) [Result](https://doc.rust-lang.org/std/result/).
 
-Similar work is (expectations)[http://code.dlang.org/packages/expectations] by Paul Backus.
+Similar work is [expectations](http://code.dlang.org/packages/expectations) by Paul Backus.
 
 Main differences with that are:
 
+$(LIST
 * lightweight, no other external dependencies
 * allows to use same types for `T` and `E`
-* allows to define `Expected` without value (`void` for `T`)
-* provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
+* allows to define $(LREF Expected) without value (`void` for `T`)
+* provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection.
+)
 
 Default type for error is `string`, i.e. `Expected!int` is the same as `Expected!(int, string)`
 
-`Expected` has customizable behavior with the help of a third type parameter,
+$(LREF Expected) has customizable behavior with the help of a third type parameter,
 `Hook`. Depending on what methods `Hook` defines, core operations on the
-`Expected` may be verified or completely redefined.
+$(LREF Expected) may be verified or completely redefined.
 If `Hook` defines no method at all and carries no state, there is no change in
 default behavior.
 This module provides a few predefined hooks (below) that add useful behavior to
-`Expected`:
+$(LREF Expected):
 
 $(BOOKTABLE ,
     $(TR $(TD $(LREF Abort)) $(TD
@@ -44,27 +46,21 @@ may define and their influence over the behavior of the `Checked` type using it.
 In the table, `hook` is an alias for `Hook` if the type `Hook` does not
 introduce any state, or an object of type `Hook` otherwise.
 
-$(TABLE ,
-    $(TR $(TH `Hook` member) $(TH Semantics in $(D Expected!(T, E, Hook)))
+$(TABLE
+    $(TR $(TH Hook member) $(TH Semantics in Expected!(T, E, Hook))
     )
-    $(TR $(TD `enableDefaultConstructor`) $(TD If defined, `Expected` would have
+    $(TR $(TD `enableDefaultConstructor`) $(TD If defined, $(LREF Expected) would have
     enabled or disabled default constructor based on it's `bool` value. Default
-    constructor is disabled by default.
-
-    `Expected` would have generated `opAssign` for value and error types,
-    if default constructor is enabled)
+    constructor is disabled by default. `opAssign` for value and error types is
+    generated if default constructor is enabled)
     )
     $(TR $(TD `onAccessEmptyValue`) $(TD If value is accessed on unitialized
-    `Expected` or `Expected` with error value, $(D hook.onAccessEmptyValue!E(err))
-    is called.
-
-    If hook doesn't implement the handler, `T.init` is returned.)
+    $(LREF Expected) or $(LREF Expected) with error value, $(D hook.onAccessEmptyValue!E(err))
+    is called. If hook doesn't implement the handler, `T.init` is returned.)
     )
     $(TR $(TD `onAccessEmptyError`) $(TD If error is accessed on unitialized
-    `Expected` or `Expected` with value, $(D hook.onAccessEmptyError())
-    is called.
-
-    If hook doesn't implement the handler, `E.init` is returned.)
+    $(LREF Expected) or $(LREF Expected) with value, $(D hook.onAccessEmptyError())
+    is called. If hook doesn't implement the handler, `E.init` is returned.)
     )
 )
 
@@ -86,17 +82,17 @@ version (unittest) import std.exception : assertThrown;
 	`Expected!(T, E)` is a type that represents either success or failure.
 
 	Type `T` is used for success value.
-	If `T` is `void`, then `Expected` can only hold error value and is considered a success when there is no error value.
+	If `T` is `void`, then $(LREF Expected) can only hold error value and is considered a success when there is no error value.
 
 	Type `E` is used for error value.
 	The default type for the error value is `string`.
 
-	Default behavior of `Expected` can be modified by the `Hook` template parameter.
+	Default behavior of $(LREF Expected) can be modified by the `Hook` template parameter.
 
 	Params:
 		T    = represents the expected value
 		E    = represents the reason explaining why it doesn’t contains avalue of type T, that is the unexpected value.
-		Hook = defines the `Expected` type behavior
+		Hook = defines the $(LREF Expected) type behavior
 +/
 struct Expected(T, E = string, Hook = Abort)
 	if (!is(E == void))
@@ -111,14 +107,14 @@ struct Expected(T, E = string, Hook = Abort)
 	static foreach (i, T; Types)
 	{
 		/++
-			Constructs an `Expected` with value or error based on the tye of the provided.
+			Constructs an $(LREF Expected) with value or error based on the tye of the provided.
 
-			In case when `T == E`, it constructs `Expected` with value.
+			In case when `T == E`, it constructs $(LREF Expected) with value.
 
-			In case when `T == void`, it constructs `Expected` with error value.
+			In case when `T == void`, it constructs $(LREF Expected) with error value.
 
-			Default constructor (if enabled) initializes `Expected` to `T.init` value.
-			If `T == void`, it initializes `Expected` with no error.
+			Default constructor (if enabled) initializes $(LREF Expected) to `T.init` value.
+			If `T == void`, it initializes $(LREF Expected) with no error.
 		+/
 		this()(auto ref T val)
 		{
@@ -153,13 +149,13 @@ struct Expected(T, E = string, Hook = Abort)
 	// generate constructor with flag to determine type of value
 	static if (Types.length == 1 && !is(T == void))
 	{
-		/++ Constructs an `Expected` with value or error based on the provided flag.
+		/++ Constructs an $(LREF Expected) with value or error based on the provided flag.
 			This constructor is available only for cases when value and error has the same type,
-			so we can still construct `Expected` with value or error.
+			so we can still construct $(LREF Expected) with value or error.
 
 			Params:
 				val     = Value to set as value or error
-				success = If `true`, `Expected` with value is created, `Expected` with error otherwise.
+				success = If `true`, $(LREF Expected) with value is created, $(LREF Expected) with error otherwise.
 		+/
 		this()(auto ref E val, bool success)
 		{
@@ -199,7 +195,7 @@ struct Expected(T, E = string, Hook = Abort)
 		{
 			static if (isAssignable!CT)
 			{
-				/++ Assigns a value or error to an `Expected`.
+				/++ Assigns a value or error to an $(LREF Expected).
 
 					Note: This is only allowed when default constructor is also enabled.
 				+/
@@ -220,10 +216,10 @@ struct Expected(T, E = string, Hook = Abort)
 
 	static if (!is(T == void))
 	{
-		/++ Checks whether this `Expected` object contains a specific expected value.
+		/++ Checks whether this $(LREF Expected) object contains a specific expected value.
 
 			* `opEquals` for the value is available only when `T != void`.
-			* `opEquals` for the error isn't available, use equality test for `Expected` in that case.
+			* `opEquals` for the error isn't available, use equality test for $(LREF Expected) in that case.
 		+/
 		bool opEquals()(const auto ref T rhs) const
 		{
@@ -231,7 +227,7 @@ struct Expected(T, E = string, Hook = Abort)
 		}
 	}
 
-	/// Checks whether this `Expected` object and `rhs` contain the same expected value or error value.
+	/// Checks whether this $(LREF Expected) object and `rhs` contain the same expected value or error value.
 	bool opEquals()(const auto ref Expected!(T, E, Hook) rhs) const
 	{
 		if (state != rhs.state) return false;
@@ -239,9 +235,9 @@ struct Expected(T, E = string, Hook = Abort)
 		return error == rhs.error;
 	}
 
-	/++ Calculates the hash value of the `Expected` in a way that iff it has a value,
+	/++ Calculates the hash value of the $(LREF Expected) in a way that iff it has a value,
 		it returns hash of the value.
-		Hash is computed using internal state and storage of the `Expected` otherwise.
+		Hash is computed using internal state and storage of the $(LREF Expected) otherwise.
 	+/
 	size_t toHash()() const nothrow
 	{
@@ -251,7 +247,7 @@ struct Expected(T, E = string, Hook = Abort)
 
 	static if (!is(T == void))
 	{
-		/// Checks if `Expected` has value
+		/// Checks if $(LREF Expected) has value
 		@property bool hasValue()() const { return state == State.value; }
 
 		/++
@@ -274,7 +270,7 @@ struct Expected(T, E = string, Hook = Abort)
 		}
 	}
 
-	/// Checks if `Expected` has error
+	/// Checks if $(LREF Expected) has error
 	@property bool hasError()() const { return state == State.error; }
 
 	/++
@@ -298,7 +294,7 @@ struct Expected(T, E = string, Hook = Abort)
 	static if (!is(T == void))
 	{
 		/++ Range interface defined by `empty`, `front`, `popFront`.
-			Yields one value if `Expected` has value.
+			Yields one value if $(LREF Expected) has value.
 
 			If `T == void`, range interface isn't defined.
 		+/
@@ -380,7 +376,7 @@ struct Expected(T, E = string, Hook = Abort)
 	}
 }
 
-/// Template to determine if provided Hook enables default constructor for `Expected`
+/// Template to determine if provided Hook enables default constructor for $(LREF Expected)
 template isDefaultConstructorEnabled(Hook)
 {
 	static if (__traits(hasMember, Hook, "enableDefaultConstructor"))
@@ -452,13 +448,13 @@ unittest
 	static assert(hasOnAccessEmptyError!Bar);
 }
 
-/++ Default hook implementation for `Expected`
+/++ Default hook implementation for $(LREF Expected)
 +/
 struct Abort
 {
 static:
-	/++ Default constructor for `Expected` is disabled
-		Same with the `opAssign`, so `Expected` can be only constructed
+	/++ Default constructor for $(LREF Expected) is disabled
+		Same with the `opAssign`, so $(LREF Expected) can be only constructed
 		once and not modified afterwards.
 	+/
 	immutable bool enableDefaultConstructor = false;
@@ -493,8 +489,8 @@ struct Throw
 {
 static:
 
-	/++ Default constructor for `Expected` is disabled
-		Same with the `opAssign`, so `Expected` can be only constructed
+	/++ Default constructor for $(LREF Expected) is disabled
+		Same with the `opAssign`, so $(LREF Expected) can be only constructed
 		once and not modified afterwards.
 	+/
 	immutable bool enableDefaultConstructor = false;
@@ -530,7 +526,11 @@ unittest
 	assertThrown!(Unexpected!string)(unexpected!(int, Throw)("foo").value);
 }
 
-/// An exception that represents an error value.
+/++ An exception that represents an error value.
+
+	This is used by $(LREF Throw) hook when undefined value or error is
+	accessed on $(LREF Expected)
++/
 class Unexpected(T) : Exception
 {
 	T error; /// error value
@@ -545,7 +545,7 @@ class Unexpected(T) : Exception
 }
 
 /++
-	Creates an `Expected` object from an expected value, with type inference.
+	Creates an $(LREF Expected) object from an expected value, with type inference.
 +/
 Expected!(T, E, Hook) expected(E = string, Hook = Abort, T)(T value)
 {
@@ -593,11 +593,11 @@ unittest
 	}
 }
 
-/++ Constructs `Expected` from the result of the provided function.
+/++ Constructs $(LREF Expected) from the result of the provided function.
 
-	If the function is `nothrow`, it just returns it's result using `expected`.
+	If the function is `nothrow`, it just returns it's result using $(LREF Expected).
 
-	If not, then it uses `try catch` block and constructs `Expected` with value or error.
+	If not, then it uses `try catch` block and constructs $(LREF Expected) with value or error.
 +/
 template expected(alias fun, Hook = Abort)
 {
@@ -625,7 +625,7 @@ unittest
 }
 
 /++
-	Creates an `Expected` object from an error value, with type inference.
+	Creates an $(LREF Expected) object from an error value, with type inference.
 +/
 Expected!(T, E, Hook) unexpected(T = void, Hook = Abort, E)(E err)
 {
@@ -663,11 +663,11 @@ unittest
 }
 
 /++
-	Returns the error contained within the `Expected` _and then_ another value if there's no error.
-	This function can be used for control flow based on `Expected` values.
+	Returns the error contained within the $(LREF Expected) _and then_ another value if there's no error.
+	This function can be used for control flow based on $(LREF Expected) values.
 
 	Params:
-		exp = The `Expected` to call andThen on
+		exp = The $(LREF Expected) to call andThen on
 		value = The value to return if there isn't an error
 		pred = The predicate to call if the there isn't an error
 +/
@@ -706,11 +706,11 @@ unittest
 }
 
 /++
-	Returns the value contained within the `Expected` _or else_ another value if there's an error.
-	This function can be used for control flow based on `Expected` values.
+	Returns the value contained within the $(LREF Expected) _or else_ another value if there's an error.
+	This function can be used for control flow based on $(LREF Expected) values.
 
 	Params:
-		exp = The `Expected` to call orElse on
+		exp = The $(LREF Expected) to call orElse on
 		value = The value to return if there is an error
 		pred = The predicate to call if the there is an error
 +/
@@ -755,17 +755,17 @@ unittest
 }
 
 /++
-	Applies a function to the expected value in an `Expected` object.
+	Applies a function to the expected value in an $(LREF Expected) object.
 
 	If no expected value is present, the original error value is passed through
 	unchanged, and the function is not called.
 
 	Params:
-		op = function called to map `Expected` value
-		hook = use another hook for mapped `Expected`
+		op = function called to map $(LREF Expected) value
+		hook = use another hook for mapped $(LREF Expected)
 
 	Returns:
-		A new `Expected` object containing the result.
+		A new $(LREF Expected) object containing the result.
 +/
 template map(alias op, Hook = Abort)
 {
@@ -810,17 +810,17 @@ unittest
 }
 
 /++
-	Applies a function to the expected error in an `Expected` object.
+	Applies a function to the expected error in an $(LREF Expected) object.
 
 	If no error is present, the original value is passed through
 	unchanged, and the function is not called.
 
 	Params:
-		op = function called to map `Expected` error
-		hook = use another hook for mapped `Expected`
+		op = function called to map $(LREF Expected) error
+		hook = use another hook for mapped $(LREF Expected)
 
 	Returns:
-		A new `Expected` object containing the result.
+		A new $(LREF Expected) object containing the result.
 +/
 template mapError(alias op, Hook = Abort)
 {
@@ -873,12 +873,12 @@ unittest
 	This function can be used to unpack a successful result while handling an error.
 
 	Params:
-		valueOp = function called to map `Expected` value
-		errorOp = function called to map `Expected` error
-		hook = use another hook for mapped `Expected`
+		valueOp = function called to map $(LREF Expected) value
+		errorOp = function called to map $(LREF Expected) error
+		hook = use another hook for mapped $(LREF Expected)
 
 	Returns:
-		A new `Expected` object containing the result.
+		A new $(LREF Expected) object containing the result.
 +/
 template mapOrElse(alias valueOp, alias errorOp)
 {
@@ -908,6 +908,7 @@ template mapOrElse(alias valueOp, alias errorOp)
 	}
 }
 
+///
 unittest
 {
 	assert(expected(42).mapOrElse!((v) => v/2, (e) => 0) == 21);
@@ -1061,7 +1062,7 @@ unittest
 	}
 }
 
-/// Same types
+// Same types
 @system nothrow unittest
 {
 	{
@@ -1203,7 +1204,7 @@ static if (__VERSION__ >= 2082)
 	}
 }
 
-/// range interface
+// range interface
 unittest
 {
 	{
