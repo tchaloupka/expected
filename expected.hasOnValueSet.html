@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+        <title>hasOnValueSet (expected.hasOnValueSet)</title>
+	<meta charset="utf-8" />
+	<meta content="width=device-width, initial-scale=1" name="viewport" />
+        <link rel="stylesheet" href="style.css" />
+        <script type="text/javascript" src="script.js"></script>
+
+	
+	<link rel="prefetch" href="search-results.html" />
+</head>
+<body>
+	<div id="page-header">
+		<div id="logotype">
+		<span>Documentation</span>
+		<nav>
+			<a href="http://dlang.org/">Dlang.org</a>
+		</nav>
+		</div>
+
+		<form action="search-docs.html" id="search">
+			<input type="search" placeholder="Find a symbol name..." name="searchTerm" />
+			<input type="submit" value="Go" />
+		</form>
+	</div>
+	<div id="page-body">
+		<div id="page-content">
+		<h1>hasOnValueSet</h1><div class="breadcrumbs"><a href="expected.html" class="breadcrumb">expected</a></div><div><div class="documentation-comment synopsis"><div><p>Template to determine if hook provides function called when value is set.</p></div></div></div><div class="annotated-prototype"><div class="aggregate-prototype"><div class="attributes">@<span data-ident="safe" class="name">safe</span> </div><span class="builtin-type">template</span> hasOnValueSet (<div class="parameters-list toplevel"><div class="template-parameter-item parameter-item">	<span><span data-ident="Hook" class="name">Hook</span></span></div><div class="template-parameter-item parameter-item">	<span><span data-ident="T" class="name">T</span></span></div></div>) {<div class="aggregate-member"><span class="builtin-type">enum</span> <span class="name">hasOnValueSet</span>;</div><div class="aggregate-member"><span class="builtin-type">enum</span> <span class="name">hasOnValueSet</span>;</div>}</div></div><div><h2 id="examples"><a href="#examples" class="header-anchor">Examples</a></h2><div class="documentation-comment"><div></div></div><div class="unittest-example-holder"><div class="documentation-comment"></div><pre class="d_code highlighted with-line-wrappers"><span class="br">1 </span><span class="kwrd">struct</span> <span class="hid">Hook</span> {
+<span class="br">2 </span>    <span class="kwrd">static</span> <span class="type">int</span> <span class="hid">lastValue</span>;
+<span class="br">3 </span>    <span class="kwrd">static</span> <span class="type">void</span> <span class="hid">onValueSet</span>(<span class="hid">T</span>)(<span class="kwrd">auto</span> <span class="kwrd">ref</span> <span class="hid">T</span> <span class="hid">val</span>) { <span class="hid">lastValue</span> = <span class="hid">val</span>; }
+<span class="br">4 </span>}
+<span class="br">5 </span>
+<span class="br">6 </span><span class="kwrd">auto</span> <span class="hid">res</span> = <span class="hid">expected</span>!(<span class="type">string</span>, <span class="hid">Hook</span>)(<span class="num">42</span>);
+<span class="br">7 </span><span class="kwrd">assert</span>(<span class="hid">res</span>.<span class="hid">hasValue</span>);
+<span class="br">8 </span><span class="kwrd">assert</span>(<span class="hid">Hook</span>.<span class="hid">lastValue</span> == <span class="num">42</span>);</pre></div><h2 id="meta"><a href="#meta" class="header-anchor">Meta</a></h2><div class="documentation-comment source-section other-section"><h3 id="source"><a href="#source" class="header-anchor">Source</a></h3><div><p><a href="source/expected.d.html#L810">See Implementation</a><br /></p></div></div></div></div>
+		<div id="page-nav"><a href="expected.html" class="parent">expected</a>
+		<span class="type-separator">classes</span><ul><li><a href="expected.Unexpected.html" class="class">Unexpected</a></li></ul><span class="type-separator">functions</span><ul><li><a href="expected.andThen.1.html" class="function">andThen</a></li><li><a href="expected.expected.1.html" class="function">expected</a></li><li><a href="expected.orElse.1.html" class="function">orElse</a></li><li><a href="expected.unexpected.html" class="function">unexpected</a></li></ul><span class="type-separator">structs</span><ul><li><a href="expected.Abort.html" class="struct">Abort</a></li><li><a href="expected.AsException.html" class="struct">AsException</a></li><li><a href="expected.Expected.html" class="struct">Expected</a></li><li><a href="expected.Throw.html" class="struct">Throw</a></li></ul><span class="type-separator">templates</span><ul><li><a href="expected.hasOnAccessEmptyError.html" class="template">hasOnAccessEmptyError</a></li><li><a href="expected.hasOnAccessEmptyValue.html" class="template">hasOnAccessEmptyValue</a></li><li><a href="expected.hasOnErrorSet.html" class="template">hasOnErrorSet</a></li><li><a href="expected.hasOnUnchecked.html" class="template">hasOnUnchecked</a></li><li><a href="expected.hasOnValueSet.html" class="template current">hasOnValueSet</a></li><li><a href="expected.isCopyConstructorEnabled.html" class="template">isCopyConstructorEnabled</a></li><li><a href="expected.isDefaultConstructorEnabled.html" class="template">isDefaultConstructorEnabled</a></li><li><a href="expected.isVoidValueEnabled.html" class="template">isVoidValueEnabled</a></li><li><a href="expected.map.html" class="template">map</a></li><li><a href="expected.mapError.html" class="template">mapError</a></li><li><a href="expected.mapOrElse.html" class="template">mapOrElse</a></li></ul></div>
+	</div>
+	<div id="page-footer">Page generated by <a href="https://github.com/adamdruppe/adrdox">adrdox</a></div>
+</body>
+</html>
