@@ -95,7 +95,7 @@ assert(foo(2).mapOrElse!(v => v*2, e => 0) == 42);
 assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
 ```
 
-See [documentation](https://tchaloupka.github.io/expected/expected.html) for more usage examples.
+See [documentation](https://tchaloupka.github.io/expected/expected.html#examples) for more usage examples.
 
 ## Instalation
 
