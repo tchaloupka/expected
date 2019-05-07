@@ -198,6 +198,7 @@ unittest
     // use it as normal
     assert(expected(42) == 42);
     assert(unexpected!int(new Exception("foo")).orElse(0) == 0);
+    assertThrown(expected(42).error);
     assertThrown(unexpected!int(new Exception("bar")).value);
 }
 
