@@ -1,4 +1,4 @@
-# expected
+# Expected
 
 [![Latest version](https://img.shields.io/dub/v/expected.svg)](https://code.dlang.org/packages/expected)
 [![Dub downloads](https://img.shields.io/dub/dt/expected.svg)](http://code.dlang.org/packages/expected)
@@ -97,7 +97,7 @@ assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
 
 See [documentation](https://tchaloupka.github.io/expected/expected.html#examples) for more usage examples.
 
-## Instalation
+## Installation
 
 If you're using [dub](), add the [expected](https://code.dlang.org/packages/expected) package to your project as a dependency.
 
