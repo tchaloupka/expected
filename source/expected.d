@@ -125,7 +125,7 @@ Author: Tomáš Chaloupka
 
 module expected;
 
-/// Basic usage
+/// $(H3 Basic usage)
 @safe unittest
 {
     auto foo(int i) {
@@ -179,7 +179,7 @@ module expected;
     assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
 }
 
-/// Advanced usage - behavior modification
+/// $(H3 Advanced usage - behavior modification)
 unittest
 {
     import exp = expected;
@@ -631,7 +631,7 @@ struct Expected(T, E = string, Hook = Abort)
     It is enabled by default.
 
     See $(LREF hasOnUnchecked) handler, which can be used in combination with disabled
-    copy constructor to enforce result check.
+    copy constructor to enforce that the result is checked.
 
     $(WARNING If copy constructor is disabled, it severely limits function chaining
     as $(LREF Expected) needs to be passed as rvalue in that case.)
