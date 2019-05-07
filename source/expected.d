@@ -18,7 +18,7 @@ $(LIST
     * provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
     * type inference for ease of use with `expected` and `unexpected`
     * allows to use same types for `T` and `E`
-    * allows to define $(LREF Expected) without value (`void` for `T`)
+    * allows to define $(LREF Expected) without value (`void` for `T`) - can be disabled with custom `Hook`
     * provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection paradigm.
     * can enforce result check (with a cost)
     * range interface
@@ -29,9 +29,9 @@ $(LIST
 Actual $(LREF Expected) type is defined as $(D Expected!(T, E, Hook)), where:
 
 $(LIST
-* `T` defines type of the success value
-* `E` defines type of the error
-* `Hook` defines behavior of the $(LREF Expected)
+    * `T` defines type of the success value
+    * `E` defines type of the error
+    * `Hook` defines behavior of the $(LREF Expected)
 )
 
 Default type for error is `string`, i.e. `Expected!int` is the same as `Expected!(int, string)`.
@@ -45,17 +45,27 @@ $(LREF Expected) has customizable behavior with the help of a third type paramet
 $(LREF Expected) may be verified or completely redefined.
 If `Hook` defines no method at all and carries no state, there is no change in
 default behavior.
+
 This module provides a few predefined hooks (below) that add useful behavior to
 $(LREF Expected):
 
 $(BOOKTABLE ,
     $(TR $(TD $(LREF Abort)) $(TD
-        fails every incorrect operation with a call to `assert(0)`.
+        Fails every incorrect operation with a call to `assert(0)`.
         It is the default third parameter, i.e. $(D Expected!short) is the same as
         $(D Expected!(short, string, Abort)).
     ))
     $(TR $(TD $(LREF Throw)) $(TD
-        fails every incorrect operation by throwing an exception.
+        Fails every incorrect operation by throwing an exception.
+    ))
+    $(TR $(TD $(LREF AsException)) $(TD
+        With this hook implementation $(LREF Expected) behaves just like regular
+        $(D Exception) handled code.
+
+        That means when function returns $(LREF expected) value, it returns instance
+        of $(LREF Expected) with a success value.
+        But when it tries to return $(LREF unexpected) error, $(D Exception)
+        is thrown right away, i.e. $(LREF Expected) fails in constructor.
     ))
 )
 
@@ -81,6 +91,9 @@ $(TABLE_ROWS
         $(NOTE WARNING: As currently it's not possible to change internal state of `const`
         or `immutable` object, automatic checking would't work on these. Hopefully with
         `__mutable` proposal..)
+    * - `enableVoidValue`
+      - Defines if $(LREF Expected) supports `void` values. It's enabled by default so this
+        hook can be used to disable it.
     * - `onAccessEmptyValue`
       - If value is accessed on unitialized $(LREF Expected) or $(LREF Expected) with error
         value, $(D hook.onAccessEmptyValue!E(err)) is called. If hook doesn't implement the
@@ -93,6 +106,13 @@ $(TABLE_ROWS
       - If the result of $(LREF Expected) isn't checked, $(D hook.onUnchecked()) is called to
         handle the error. If hook doesn't implement the handler, assert is thrown.
         $(NOTE Note that `hook.enableCopyConstructor` must be false for checks to work.)
+    * - `onValueSet`
+      - $(D hook.onValueSet!T(val)) function is called when success value is being set to
+        $(LREF Expected). It can be used for loging purposes, etc.
+    * - `onErrorSet`
+      - $(D hook.onErrorSet!E(err)) function is called when error value is being set to
+        $(LREF Expected). This hook function is used by $(LREF AsException) hook implementation
+        to change `Expected` idiom to normal `Exception` handling behavior.
 )
 
 License: BSL-1.0
@@ -160,7 +180,7 @@ module expected;
 
 version (unittest) {
     import std.algorithm : reverse;
-    import std.exception : assertThrown;
+    import std.exception : assertThrown, collectExceptionMsg;
     import std.stdio : writeln;
 }
 
@@ -183,12 +203,11 @@ version (unittest) {
         Hook = defines the $(LREF Expected) type behavior
 +/
 struct Expected(T, E = string, Hook = Abort)
-    if (!is(E == void))
+    if (!is(E == void) && (isVoidValueEnabled!Hook || !is(T == void)))
 {
     import std.functional: forward;
     import std.meta : AliasSeq, Erase, NoDuplicates;
     import std.traits: isAssignable, isCopyable, Unqual;
-    import std.typecons : Flag, No, Yes;
 
     private alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
 
@@ -208,7 +227,10 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isCopyable!T) storage = Storage(val);
             else storage = Storage(forward!val);
-            setState!(T, Yes.force)();
+            setState!T();
+
+            static if (hasOnValueSet!(Hook, T)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+            static if (hasOnErrorSet!(Hook, T)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
         }
 
         static if (isCopyable!T)
@@ -217,14 +239,20 @@ struct Expected(T, E = string, Hook = Abort)
             this()(auto ref const(T) val) const
             {
                 storage = const(Storage)(val);
-                setState!(T, Yes.force)();
+                setState!T();
+
+                static if (hasOnValueSet!(Hook, T)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+                static if (hasOnErrorSet!(Hook, T)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
             }
 
             /// ditto
             this()(auto ref immutable(T) val) immutable
             {
                 storage = immutable(Storage)(val);
-                setState!(T, Yes.force)();
+                setState!T();
+
+                static if (hasOnValueSet!(Hook, T)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+                static if (hasOnErrorSet!(Hook, T)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
             }
         }
         else
@@ -247,9 +275,12 @@ struct Expected(T, E = string, Hook = Abort)
         +/
         this()(auto ref E val, bool success)
         {
-            static if (isCopyable!T) storage = Storage(val);
+            static if (isCopyable!E) storage = Storage(val);
             else storage = Storage(forward!val);
             setState!E(success ? State.value : State.error);
+
+            static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+            static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
         }
 
         static if (isCopyable!E)
@@ -259,6 +290,9 @@ struct Expected(T, E = string, Hook = Abort)
             {
                 storage = const(Storage)(val);
                 setState!E(success ? State.value : State.error);
+
+                static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+                static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
             }
 
             /// ditto
@@ -266,6 +300,9 @@ struct Expected(T, E = string, Hook = Abort)
             {
                 storage = immutable(Storage)(val);
                 setState!E(success ? State.value : State.error);
+
+                static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+                static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
             }
         }
         else
@@ -302,9 +339,11 @@ struct Expected(T, E = string, Hook = Abort)
                 +/
                 void opAssign()(auto ref CT rhs)
                 {
-                    //TODO: Hook to disallow reassign
                     storage = Storage(forward!rhs);
                     setState!CT();
+
+                    static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+                    static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
                 }
             }
         }
@@ -546,21 +585,59 @@ struct Expected(T, E = string, Hook = Abort)
     State state = State.empty;
     static if (!isCopyConstructorEnabled!Hook) bool checked = false;
 
-    void setState(MT, Flag!"force" force = No.force)()
+    void setState(MT)(State known = State.empty)
     {
         State s;
-        static if (Types.length == 1 && is(T == void)) s = State.error;
-        else static if (Types.length == 1 || is(MT == T)) s = State.value;
-        else s = State.error;
-
-        static if (!force)
+        if (known != State.empty) s = known;
+        else
         {
-            //TODO: change with Hook?
-            assert(state == State.empty || state == s, "Can't change meaning of already set Expected type");
+            static if (Types.length == 1 && is(T == void)) s = State.error;
+            else static if (Types.length == 1 || is(MT == T)) s = State.value;
+            else s = State.error;
         }
 
+        //TODO: change with Hook?
+        assert(state == State.empty || state == s, "Can't change meaning of already set Expected type");
         state = s;
     }
+}
+
+/++ Template to determine if hook enables or disables copy constructor.
+
+    It is enabled by default.
+
+    See $(LREF hasOnUnchecked) handler, which can be used in combination with disabled
+    copy constructor to enforce result check.
+
+    $(WARNING If copy constructor is disabled, it severely limits function chaining
+    as $(LREF Expected) needs to be passed as rvalue in that case.)
++/
+template isCopyConstructorEnabled(Hook)
+{
+    static if (__traits(hasMember, Hook, "enableCopyConstructor"))
+    {
+        static assert(
+            is(typeof(__traits(getMember, Hook, "enableCopyConstructor")) : bool),
+            "Hook's enableCopyConstructor is expected to be of type bool"
+        );
+        enum isCopyConstructorEnabled = __traits(getMember, Hook, "enableCopyConstructor");
+    }
+    else enum isCopyConstructorEnabled = true;
+}
+
+///
+unittest
+{
+    struct Foo {}
+    struct Bar { static immutable bool enableCopyConstructor = false; }
+    static assert(isCopyConstructorEnabled!Foo);
+    static assert(!isCopyConstructorEnabled!Bar);
+}
+
+// just a helper to determine check behavior
+private template isChecked(Hook)
+{
+    enum isChecked = !isCopyConstructorEnabled!Hook;
 }
 
 /// Template to determine if provided Hook enables default constructor for $(LREF Expected)
@@ -572,8 +649,7 @@ template isDefaultConstructorEnabled(Hook)
             is(typeof(__traits(getMember, Hook, "enableDefaultConstructor")) : bool),
             "Hook's enableDefaultConstructor is expected to be of type bool"
         );
-        static if (__traits(getMember, Hook, "enableDefaultConstructor")) enum isDefaultConstructorEnabled = true;
-        else enum isDefaultConstructorEnabled = false;
+        enum isDefaultConstructorEnabled = __traits(getMember, Hook, "enableDefaultConstructor");
     }
     else enum isDefaultConstructorEnabled = false;
 }
@@ -587,8 +663,29 @@ unittest
     static assert(isDefaultConstructorEnabled!Bar);
 }
 
-/++ Template to determine if hook provides function called on empty value.
-+/
+/// Template to determine if provided Hook enables void values for $(LREF Expected)
+template isVoidValueEnabled(Hook)
+{
+    static if (__traits(hasMember, Hook, "enableVoidValue"))
+    {
+        static assert(
+            is(typeof(__traits(getMember, Hook, "enableVoidValue")) : bool),
+            "Hook's enableVoidValue is expected to be of type bool"
+        );
+        enum isVoidValueEnabled = __traits(getMember, Hook, "isVoidValueEnabled");
+    }
+    else enum isVoidValueEnabled = true;
+}
+
+///
+unittest
+{
+    struct Hook { static immutable bool enableVoidValue = false; }
+    assert(!expected().hasError); // void values are enabled by default
+    static assert(!__traits(compiles, expected!(string, Hook)())); // won't compile
+}
+
+/// Template to determine if hook provides function called on empty value.
 template hasOnAccessEmptyValue(Hook, E)
 {
     static if (__traits(hasMember, Hook, "onAccessEmptyValue"))
@@ -633,45 +730,6 @@ unittest
     struct Bar { static void onAccessEmptyError() {} }
     static assert(!hasOnAccessEmptyError!Foo);
     static assert(hasOnAccessEmptyError!Bar);
-}
-
-/++ Template to determine if hook enables or disables copy constructor.
-
-    It is enabled by default.
-
-    See $(LREF hasOnUnchecked) handler, which can be used in combination with disabled
-    copy constructor to enforce result check.
-
-    $(WARNING If copy constructor is disabled, it severely limits function chaining
-    as $(LREF Expected) needs to be passed as rvalue in that case.)
-+/
-template isCopyConstructorEnabled(Hook)
-{
-    static if (__traits(hasMember, Hook, "enableCopyConstructor"))
-    {
-        static assert(
-            is(typeof(__traits(getMember, Hook, "enableCopyConstructor")) : bool),
-            "Hook's enableCopyConstructor is expected to be of type bool"
-        );
-        static if (__traits(getMember, Hook, "enableCopyConstructor")) enum isCopyConstructorEnabled = true;
-        else enum isCopyConstructorEnabled = false;
-    }
-    else enum isCopyConstructorEnabled = true;
-}
-
-///
-unittest
-{
-    struct Foo {}
-    struct Bar { static immutable bool enableCopyConstructor = false; }
-    static assert(isCopyConstructorEnabled!Foo);
-    static assert(!isCopyConstructorEnabled!Bar);
-}
-
-// just a helper to determine check behavior
-private template isChecked(Hook)
-{
-    enum isChecked = !isCopyConstructorEnabled!Hook;
 }
 
 /++ Template to determine if hook provides custom handler for case
@@ -723,6 +781,62 @@ template hasOnUnchecked(Hook)
     assertThrown({ unexpected!(void, Hook)("foo"); }());
 }
 
+/++ Template to determine if hook provides function called when value is set.
++/
+template hasOnValueSet(Hook, T)
+{
+    static if (__traits(hasMember, Hook, "onValueSet"))
+    {
+        static assert(
+            is(typeof(__traits(getMember, Hook, "onValueSet")(T.init))),
+            "Hook's onValueSet is expected to be callable with value argument"
+        );
+        enum hasOnValueSet = true;
+    }
+    else enum hasOnValueSet = false;
+}
+
+///
+unittest
+{
+    struct Hook {
+        static int lastValue;
+        static void onValueSet(T)(auto ref T val) { lastValue = val; }
+    }
+
+    auto res = expected!(string, Hook)(42);
+    assert(res.hasValue);
+    assert(Hook.lastValue == 42);
+}
+
+/++ Template to determine if hook provides function called when error is set.
++/
+template hasOnErrorSet(Hook, T)
+{
+    static if (__traits(hasMember, Hook, "onErrorSet"))
+    {
+        static assert(
+            is(typeof(__traits(getMember, Hook, "onErrorSet")(T.init))),
+            "Hook's onErrorSet is expected to be callable with error argument"
+        );
+        enum hasOnErrorSet = true;
+    }
+    else enum hasOnErrorSet = false;
+}
+
+///
+unittest
+{
+    struct Hook {
+        static string lastErr;
+        static void onErrorSet(E)(auto ref E err) { lastErr = err; }
+    }
+
+    auto res = unexpected!(int, Hook)("foo");
+    assert(res.hasError);
+    assert(Hook.lastErr == "foo");
+}
+
 /++ Default hook implementation for $(LREF Expected)
 +/
 struct Abort
@@ -747,6 +861,7 @@ static:
     }
 }
 
+///
 @system unittest
 {
     static assert(!isDefaultConstructorEnabled!Abort);
@@ -790,6 +905,7 @@ static:
     }
 }
 
+///
 unittest
 {
     static assert(!isDefaultConstructorEnabled!Throw);
@@ -799,6 +915,45 @@ unittest
 
     assertThrown!(Unexpected!string)(expected!(string, Throw)(42).error);
     assertThrown!(Unexpected!string)(unexpected!(int, Throw)("foo").value);
+}
+
+/++ Hook implementation that behaves like a thrown exception.
+    It throws $(D Exception) right when the $(LREF Expected) with error is initialized.
+
+    With this, one can easily change the code behavior between `Expected` idiom or plain `Exception`s.
++/
+struct AsException
+{
+static:
+
+    /++ Default constructor for $(LREF Expected) is disabled.
+        Same with the `opAssign`, so $(LREF Expected) can be only constructed
+        once and not modified afterwards.
+    +/
+    immutable bool enableDefaultConstructor = false;
+
+    /++ Handler for case when empty error is accessed.
+    +/
+    void onErrorSet(E)(auto ref E err)
+    {
+        static if (is(E : Throwable)) throw E;
+        else throw new Unexpected!E(err);
+    }
+}
+
+///
+unittest
+{
+    static assert(!isDefaultConstructorEnabled!AsException);
+    static assert(hasOnErrorSet!(AsException, string));
+
+    auto div(int a, int b) {
+        if (b != 0) return expected!(string, AsException)(a / b);
+        return unexpected!(int, AsException)("oops");
+    }
+
+    assert(div(10, 2) == 5);
+    assert(collectExceptionMsg!(Unexpected!string)(div(1, 0)) == "oops");
 }
 
 /++ An exception that represents an error value.
@@ -816,6 +971,7 @@ class Unexpected(T) : Exception
     {
         super("Unexpected error", file, line);
         this.error = error;
+        static if (is(T == string)) this.msg = value;
     }
 }
 
@@ -1340,6 +1496,7 @@ unittest
 // Same types
 @system nothrow unittest
 {
+    // value
     {
         alias Exp = Expected!(int, int);
         auto res = Exp(42);
@@ -1347,6 +1504,38 @@ unittest
         assert(res.hasValue && !res.hasError);
         assert(res.value == 42);
         assertThrown!Throwable(res.error());
+    }
+
+    // error
+    {
+        alias Exp = Expected!(int, int);
+        auto res = Exp(42, false);
+        assert(!res);
+        assert(!res.hasValue && res.hasError);
+        assert(res.error == 42);
+        assertThrown!Throwable(res.value());
+        assert(unexpected!int(42).error == 42);
+    }
+
+    // immutable value
+    {
+        alias Exp = Expected!(immutable(int), immutable(int));
+        auto res = Exp(immutable int(42));
+        assert(res);
+        assert(res.hasValue && !res.hasError);
+        assert(res.value == 42);
+        assertThrown!Throwable(res.error());
+    }
+
+    // immutable error
+    {
+        alias Exp = Expected!(immutable(int), immutable(int));
+        auto res = Exp(immutable int(42), false);
+        assert(!res);
+        assert(!res.hasValue && res.hasError);
+        assert(res.error == 42);
+        assertThrown!Throwable(res.value());
+        assert(unexpected!(immutable(int))(immutable int(42)).error == 42);
     }
 
     // const mix
