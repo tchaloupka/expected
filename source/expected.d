@@ -10,17 +10,34 @@ It is also inspired by C++'s proposed [std::expected](https://wg21.link/p0323) a
 
 Similar work is [expectations](http://code.dlang.org/packages/expectations) by Paul Backus.
 
-Main differences with that are:
+## Main features
 
 $(LIST
-* lightweight, no other external dependencies
-* allows to use same types for `T` and `E`
-* allows to define $(LREF Expected) without value (`void` for `T`)
-* provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection.
-* can enforce result check (with a cost)
+    * lightweight, no other external dependencies
+    * works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
+    * provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
+    * type inference for ease of use with `expected` and `unexpected`
+    * allows to use same types for `T` and `E`
+    * allows to define $(LREF Expected) without value (`void` for `T`)
+    * provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection paradigm.
+    * can enforce result check (with a cost)
 )
 
-Default type for error is `string`, i.e. `Expected!int` is the same as `Expected!(int, string)`
+## Description
+
+Actual $(LREF Expected) type is defined as $(D Expected!(T, E, Hook)), where:
+
+$(LIST
+* `T` defines type of the success value
+* `E` defines type of the error
+* `Hook` defines behavior of the $(LREF Expected)
+)
+
+Default type for error is `string`, i.e. `Expected!int` is the same as `Expected!(int, string)`.
+
+$(LREF Abort) is used as a default hook.
+
+### Hooks
 
 $(LREF Expected) has customizable behavior with the help of a third type parameter,
 `Hook`. Depending on what methods `Hook` defines, core operations on the
@@ -51,17 +68,29 @@ $(TABLE_ROWS
     * + Hook member
       + Semantics in Expected!(T, E, Hook)
     * - `enableDefaultConstructor`
-      - If defined, $(LREF Expected) would have enabled or disabled default constructor based on it's `bool` value. Default constructor is disabled by default. `opAssign` for value and error types is generated if default constructor is enabled.
+      - If defined, $(LREF Expected) would have enabled or disabled default constructor
+        based on it's `bool` value. Default constructor is disabled by default.
+        `opAssign` for value and error types is generated if default constructor is enabled.
     * - `enableCopyConstructor`
-      - If defined, $(LREF Expected) would have enabled or disabled copy constructor based on it's `bool` value. It is enabled by default. When disabled, it enables automatic check if the result was checked either for value or error. When not checked it calls $(D hook.onUnchecked) if provided.
+      - If defined, $(LREF Expected) would have enabled or disabled copy constructor based
+        on it's `bool` value. It is enabled by default. When disabled, it enables automatic
+        check if the result was checked either for value or error.
+        When not checked it calls $(D hook.onUnchecked) if provided.
 
-        $(NOTE WARNING: As currently it's not possible to change internal state of `const` or `immutable` object, automatic checking would't work on these. Hopefully with `__mutable` proposal..)
+        $(NOTE WARNING: As currently it's not possible to change internal state of `const`
+        or `immutable` object, automatic checking would't work on these. Hopefully with
+        `__mutable` proposal..)
     * - `onAccessEmptyValue`
-      - If value is accessed on unitialized $(LREF Expected) or $(LREF Expected) with error value, $(D hook.onAccessEmptyValue!E(err)) is called. If hook doesn't implement the handler, `T.init` is returned.
+      - If value is accessed on unitialized $(LREF Expected) or $(LREF Expected) with error
+        value, $(D hook.onAccessEmptyValue!E(err)) is called. If hook doesn't implement the
+        handler, `T.init` is returned.
     * - `onAccessEmptyError`
-      - If error is accessed on unitialized $(LREF Expected) or $(LREF Expected) with value, $(D hook.onAccessEmptyError()) is called. If hook doesn't implement the handler, `E.init` is returned.
+      - If error is accessed on unitialized $(LREF Expected) or $(LREF Expected) with value,
+        $(D hook.onAccessEmptyError()) is called. If hook doesn't implement the handler,
+        `E.init` is returned.
     * - `onUnchecked`
-      - If the result of $(LREF Expected) isn't checked, $(D hook.onUnchecked()) is called to handle the error. If hook doesn't implement the handler, assert is thrown.
+      - If the result of $(LREF Expected) isn't checked, $(D hook.onUnchecked()) is called to
+        handle the error. If hook doesn't implement the handler, assert is thrown.
         $(NOTE Note that `hook.enableCopyConstructor` must be false for checks to work.)
 )
 
@@ -99,9 +128,9 @@ module expected;
 	assert(foo(0).error == "oops");
 
 	// void result
-	assert(Expected!(void)()); // no error -> success
-	assert(!Expected!(void)().hasError);
-	// assert(unexpected("foo").value); // doesn't have hasValue and value properties
+	assert(expected()); // no error -> success
+	assert(!expected().hasError);
+	// assert(unexpected("foo").hasValue); // doesn't have hasValue and value properties
 
 	// expected from throwing function
 	assert(expected!bar(1) == 0);
@@ -356,7 +385,7 @@ struct Expected(T, E = string, Hook = Abort)
 			/// ditto
 			@property bool hasValue()()
 			{
-				static if (!isCopyConstructorEnabled!Hook) checked = true;
+				checked = true;
 				return state == State.value;
 			}
 		}
@@ -383,7 +412,7 @@ struct Expected(T, E = string, Hook = Abort)
 		} else {
 			@property auto ref T value()
 			{
-				static if (!isCopyConstructorEnabled!Hook) checked = true;
+				checked = true;
 
 				if (state != State.value)
 				{
@@ -403,7 +432,7 @@ struct Expected(T, E = string, Hook = Abort)
 		/// ditto
 		@property bool hasError()()
 		{
-			static if (!isCopyConstructorEnabled!Hook) checked = true;
+			checked = true;
 			return state == State.error;
 		}
 	}
@@ -428,7 +457,7 @@ struct Expected(T, E = string, Hook = Abort)
 	} else {
 		@property auto ref E error()
 		{
-			static if (!isCopyConstructorEnabled!Hook) checked = true;
+			checked = true;
 
 			if (state != State.error)
 			{
@@ -698,19 +727,19 @@ template hasOnUnchecked(Hook)
 struct Abort
 {
 static:
-	/++ Default constructor for $(LREF Expected) is disabled
+	/++ Default constructor for $(LREF Expected) is disabled.
 		Same with the `opAssign`, so $(LREF Expected) can be only constructed
 		once and not modified afterwards.
 	+/
 	immutable bool enableDefaultConstructor = false;
 
-	/// Handler for case when empty value is accessed
+	/// Handler for case when empty value is accessed.
 	void onAccessEmptyValue(E)(E err) nothrow @nogc
 	{
 		assert(0, "Can't access value of unexpected");
 	}
 
-	/// Handler for case when empty error is accessed
+	/// Handler for case when empty error is accessed.
 	void onAccessEmptyError() nothrow @nogc
 	{
 		assert(0, "Can't access error on expected value");
@@ -734,13 +763,13 @@ struct Throw
 {
 static:
 
-	/++ Default constructor for $(LREF Expected) is disabled
+	/++ Default constructor for $(LREF Expected) is disabled.
 		Same with the `opAssign`, so $(LREF Expected) can be only constructed
 		once and not modified afterwards.
 	+/
 	immutable bool enableDefaultConstructor = false;
 
-	/++ Handler for case when empty value is accessed
+	/++ Handler for case when empty value is accessed.
 
 		Throws:
 			If `E` inherits from `Throwable`, the error value is thrown.
@@ -753,7 +782,7 @@ static:
 		else throw new Unexpected!E(err);
 	}
 
-	/// Handler for case when empty error is accessed
+	/// Handler for case when empty error is accessed.
 	void onAccessEmptyError()
 	{
 		throw new Unexpected!string("Can't access error on expected value");
