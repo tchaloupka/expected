@@ -722,8 +722,17 @@ struct Expected(T, E = string, Hook = Abort)
         ref inout(E) getError()() inout
         {
             assert(storage);
-            static if (Types.length == 1) return __traits(getMember, storage.payload, "values")[0];
-            else return __traits(getMember, storage.payload, "values")[1];
+            static if (__VERSION__ < 2078) // workaround - see: https://issues.dlang.org/show_bug.cgi?id=15094
+            {
+                auto p = &storage.payload;
+                static if (Types.length == 1) return __traits(getMember, p, "values")[0];
+                else return __traits(getMember, p, "values")[1];
+            }
+            else
+            {
+                static if (Types.length == 1) return __traits(getMember, storage.payload, "values")[0];
+                else return __traits(getMember, storage.payload, "values")[1];
+            }
         }
 
         static if (!is(T == void))
@@ -731,7 +740,12 @@ struct Expected(T, E = string, Hook = Abort)
             ref inout(T) getValue()() inout
             {
                 assert(storage);
-                return __traits(getMember, storage.payload, "values")[0];
+                static if (__VERSION__ < 2078) // workaround - see: https://issues.dlang.org/show_bug.cgi?id=15094
+                {
+                    auto p = &storage.payload;
+                    return __traits(getMember, p, "values")[0];
+                }
+                else return __traits(getMember, storage.payload, "values")[0];
             }
         }
 
