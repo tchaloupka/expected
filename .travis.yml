@@ -9,6 +9,7 @@ notifications:
   email: true
 
 d:
+  - dmd-2.086.0
   - dmd-2.085.1
   - dmd-2.084.1
   - dmd-2.083.1

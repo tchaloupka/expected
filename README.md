@@ -103,6 +103,7 @@ Alternatively, since it's a single file self-contained implementation, you can s
 
 Build is tested against:
 
+* dmd-2.086.0
 * dmd-2.085.1
 * dmd-2.084.1
 * dmd-2.083.1
