@@ -239,7 +239,6 @@ struct Expected(T, E = string, Hook = Abort)
     if (!is(E == void) && (isVoidValueEnabled!Hook || !is(T == void)))
 {
     import std.algorithm : move;
-    import std.functional: forward;
     import std.meta : AliasSeq, Filter, NoDuplicates;
     import std.traits: isAssignable, isCopyable, hasIndirections, Unqual;
 
@@ -264,13 +263,13 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isRefCountedPayloadEnabled!Hook)
             {
-                static if (isCopyable!CT) initialize(forward!val);
+                static if (isCopyable!CT) initialize(val);
                 else static if (isMoveable!CT) initialize(move(val));
                 else static assert(0, "Can't consume " ~ CT.stringof);
             }
             else
             {
-                static if (isCopyable!CT) storage = Payload(forward!val);
+                static if (isCopyable!CT) storage = Payload(val);
                 else static if (isMoveable!CT) storage = Payload(move(val));
                 else static assert(0, "Can't consume " ~ CT.stringof);
             }
@@ -324,13 +323,13 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isRefCountedPayloadEnabled!Hook)
             {
-                static if (isCopyable!E) initialize(forward!val);
+                static if (isCopyable!E) initialize(val);
                 else static if (isMoveable!E) initialize(move(val));
                 else static assert(0, "Can't consume " ~ E.stringof);
             }
             else
             {
-                static if (isCopyable!E) storage = Payload(forward!val);
+                static if (isCopyable!E) storage = Payload(val);
                 else static if (isMoveable!E) storage = Payload(val);
                 else static assert(0, "Can't consume " ~ E.stringof);
             }
@@ -420,10 +419,10 @@ struct Expected(T, E = string, Hook = Abort)
                     auto s = state;
                     static if (isRefCountedPayloadEnabled!Hook)
                     {
-                        if (!storage) initialize(forward!rhs);
-                        else storage.payload = Payload(forward!rhs);
+                        if (!storage) initialize(rhs);
+                        else storage.payload = Payload(rhs);
                     }
-                    else storage = Payload(forward!rhs);
+                    else storage = Payload(rhs);
                     setState!(CT)(s); // set previous state
 
                     static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
@@ -629,7 +628,7 @@ struct Expected(T, E = string, Hook = Abort)
         {
             this()(auto ref CT val)
             {
-                static if (isCopyable!CT) __traits(getMember, Payload, "values")[i] = forward!val;
+                static if (isCopyable!CT) __traits(getMember, Payload, "values")[i] = val;
                 else static if (isMoveable!CT) __traits(getMember, Payload, "values")[i] = move(val);
                 else static assert(0, "Can't consume " ~ CT.stringof);
             }
