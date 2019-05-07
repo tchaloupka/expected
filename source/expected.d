@@ -21,6 +21,7 @@ $(LIST
     * allows to define $(LREF Expected) without value (`void` for `T`) - can be disabled with custom `Hook`
     * provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection paradigm.
     * can enforce result check (with a cost)
+    * can behave like a normal `Exception` handled code by changing the used `Hook` implementation
     * range interface
 )
 
@@ -176,6 +177,28 @@ module expected;
     // mapOrElse
     assert(foo(2).mapOrElse!(v => v*2, e => 0) == 42);
     assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
+}
+
+/// Advanced usage - behavior modification
+unittest
+{
+    import exp = expected;
+
+    // define our Expected type using Exception as Error values
+    // and Throw hook, which throws when empty value or error is accessed
+    template Expected(T)
+    {
+        alias Expected = exp.Expected!(T, Exception, Throw);
+    }
+
+    // create wrappers for simplified usage of our Expected
+    auto expected(T)(T val) { return exp.expected!(Exception, Throw)(val); }
+    auto unexpected(T)(Exception err) { return exp.unexpected!(T, Throw)(err); }
+
+    // use it as normal
+    assert(expected(42) == 42);
+    assert(unexpected!int(new Exception("foo")).orElse(0) == 0);
+    assertThrown(unexpected!int(new Exception("bar")).value);
 }
 
 version (unittest) {
@@ -894,7 +917,8 @@ static:
     +/
     void onAccessEmptyValue(E)(E err)
     {
-        static if(is(E : Throwable)) throw err;
+        import std.traits : Unqual;
+        static if(is(Unqual!E : Throwable)) throw err;
         else throw new Unexpected!E(err);
     }
 
@@ -963,15 +987,21 @@ unittest
 +/
 class Unexpected(T) : Exception
 {
-    T error; /// error value
+    // remove possible inout qualifier
+    static if (is(T U == inout U)) alias ET = U;
+    else alias ET = T;
+
+    ET error; /// error value
 
     /// Constructs an `Unexpected` exception from an error value.
     pure @safe @nogc nothrow
-    this(T value, string file = __FILE__, size_t line = __LINE__)
+    this()(auto ref T value, string file = __FILE__, size_t line = __LINE__)
     {
-        super("Unexpected error", file, line);
+        import std.traits : isAssignable;
+        static if (isAssignable!(string, T)) super(value, file, line);
+        else super("Unexpected error", file, line);
+
         this.error = error;
-        static if (is(T == string)) this.msg = value;
     }
 }
 
