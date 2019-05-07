@@ -22,11 +22,13 @@ Similar work is [expectations](http://code.dlang.org/packages/expectations) by P
 * lightweight, no other external dependencies
 * works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
 * provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
+* type inference for ease of use with `expected` and `unexpected`
 * allows to use same types for `T` and `E`
-* allows to define `Expected` without value (`void` for `T`)
-* provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection.
+* allows to define `Expected` without value (`void` for `T`) - can be disabled with custom `Hook`
+* provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection paradigm.
 * can enforce result check (with a cost)
-
+* can behave like a normal `Exception` handled code by changing the used `Hook` implementation
+* range interface
 
 ## Documentation
 
@@ -92,6 +94,8 @@ assert(foo(2).mapError!(e => "OOPS") == 21);
 assert(foo(2).mapOrElse!(v => v*2, e => 0) == 42);
 assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
 ```
+
+See [documentation](https://tchaloupka.github.io/expected/expected.html) for more usage examples.
 
 ## Instalation
 
