@@ -68,6 +68,11 @@ $(BOOKTABLE ,
         But when it tries to return $(LREF unexpected) error, $(D Exception)
         is thrown right away, i.e. $(LREF Expected) fails in constructor.
     ))
+    $(TR $(TD $(LREF RCAbort)) $(TD
+        Similar to $(LREF Abort) hook but uses reference counted payload instead
+        which enables checking if the caller properly checked result of the
+        $(LREF Expected).
+    ))
 )
 
 The hook's members are looked up statically in a Design by Introspection manner
@@ -92,6 +97,10 @@ $(TABLE_ROWS
         $(NOTE WARNING: As currently it's not possible to change internal state of `const`
         or `immutable` object, automatic checking would't work on these. Hopefully with
         `__mutable` proposal..)
+    * - `enableRefCountedPayload`
+      - Set $(LREF Expected) instances to use reference counted payload storage. It's usefull
+        when combined with `onUnchecked` to forcibly check that the result was checked for value
+        or error.
     * - `enableVoidValue`
       - Defines if $(LREF Expected) supports `void` values. It's enabled by default so this
         hook can be used to disable it.
@@ -106,7 +115,8 @@ $(TABLE_ROWS
     * - `onUnchecked`
       - If the result of $(LREF Expected) isn't checked, $(D hook.onUnchecked()) is called to
         handle the error. If hook doesn't implement the handler, assert is thrown.
-        $(NOTE Note that `hook.enableCopyConstructor` must be false for checks to work.)
+        $(NOTE Note that `hook.enableCopyConstructor` must be `false` or `hook.enableRefCountedPayload`
+        must be `true` for checks to work.)
     * - `onValueSet`
       - $(D hook.onValueSet!T(val)) function is called when success value is being set to
         $(LREF Expected). It can be used for loging purposes, etc.
@@ -121,7 +131,6 @@ Author: Tomáš Chaloupka
 +/
 
 //TODO: collect errno function call - see https://dlang.org/phobos/std_exception.html#ErrnoException
-//TODO: ability to enforce error handling (via refcounted payload)
 
 module expected;
 
@@ -142,6 +151,7 @@ module expected;
     assert(foo(2));
     assert(foo(2).hasValue);
     assert(!foo(2).hasError);
+    debug writeln(foo(2).value);
     assert(foo(2).value == 21);
 
     assert(!foo(0));
@@ -231,11 +241,11 @@ struct Expected(T, E = string, Hook = Abort)
 {
     import std.functional: forward;
     import std.meta : AliasSeq, Erase, NoDuplicates;
-    import std.traits: isAssignable, isCopyable, Unqual;
+    import std.traits: isAssignable, isCopyable, hasIndirections, Unqual;
 
     private alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
 
-    static foreach (i, T; Types)
+    static foreach (i, CT; Types)
     {
         /++
             Constructs an $(LREF Expected) with value or error based on the tye of the provided.
@@ -247,43 +257,51 @@ struct Expected(T, E = string, Hook = Abort)
             Default constructor (if enabled) initializes $(LREF Expected) to `T.init` value.
             If `T == void`, it initializes $(LREF Expected) with no error.
         +/
-        this()(auto ref T val)
+        this()(auto ref CT val)
         {
-            static if (isCopyable!T) storage = Storage(val);
-            else storage = Storage(forward!val);
-            setState!T();
-
-            static if (hasOnValueSet!(Hook, T)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-            static if (hasOnErrorSet!(Hook, T)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
-        }
-
-        static if (isCopyable!T)
-        {
-            /// ditto
-            this()(auto ref const(T) val) const
+            static if (isRefCountedPayloadEnabled!Hook)
             {
-                storage = const(Storage)(val);
-                setState!T();
-
-                static if (hasOnValueSet!(Hook, T)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-                static if (hasOnErrorSet!(Hook, T)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+                static if (isCopyable!CT) initialize(val);
+                else initialize(forward!val);
             }
-
-            /// ditto
-            this()(auto ref immutable(T) val) immutable
+            else
             {
-                storage = immutable(Storage)(val);
-                setState!T();
-
-                static if (hasOnValueSet!(Hook, T)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-                static if (hasOnErrorSet!(Hook, T)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+                static if (isCopyable!CT) storage = Payload(val);
+                else storage = Payload(forward!val);
             }
+            setState!CT();
+
+            static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+            static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
         }
-        else
-        {
-            @disable this(const(T) val) const;
-            @disable this(immutable(T) val) immutable;
-        }
+
+        // static if (isCopyable!CT)
+        // {
+        //     / ditto
+        //     this()(auto ref const(CT) val) const
+        //     {
+        //         storage = const(Payload)(val);
+        //         setState!CT();
+
+        //         static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+        //         static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+        //     }
+
+        //     /// ditto
+        //     this()(auto ref immutable(CT) val) immutable
+        //     {
+        //         storage = immutable(Payload)(val);
+        //         setState!CT();
+
+        //         static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+        //         static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+        //     }
+        // }
+        // else
+        // {
+        //     @disable this(const(CT) val) const;
+        //     @disable this(immutable(CT) val) immutable;
+        // }
     }
 
     // generate constructor with flag to determine type of value
@@ -299,55 +317,83 @@ struct Expected(T, E = string, Hook = Abort)
         +/
         this()(auto ref E val, bool success)
         {
-            static if (isCopyable!E) storage = Storage(val);
-            else storage = Storage(forward!val);
+            static if (isRefCountedPayloadEnabled!Hook)
+            {
+                static if (isCopyable!E) initialize(val);
+                else initialize(forward!val);
+            }
+            else
+            {
+                static if (isCopyable!E) storage = Payload(val);
+                else storage = Payload(forward!val);
+            }
             setState!E(success ? State.value : State.error);
 
             static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
             static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
         }
 
-        static if (isCopyable!E)
-        {
-            /// ditto
-            this()(auto ref const(E) val, bool success) const
-            {
-                storage = const(Storage)(val);
-                setState!E(success ? State.value : State.error);
+        // static if (isCopyable!E)
+        // {
+        //     /// ditto
+        //     this()(auto ref const(E) val, bool success) const
+        //     {
+        //         storage = const(Payload)(val);
+        //         setState!E(success ? State.value : State.error);
 
-                static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-                static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
-            }
+        //         static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+        //         static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+        //     }
 
-            /// ditto
-            this()(auto ref immutable(E) val, bool success) immutable
-            {
-                storage = immutable(Storage)(val);
-                setState!E(success ? State.value : State.error);
+        //     /// ditto
+        //     this()(auto ref immutable(E) val, bool success) immutable
+        //     {
+        //         storage = immutable(Payload)(val);
+        //         setState!E(success ? State.value : State.error);
 
-                static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-                static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
-            }
-        }
-        else
-        {
-            @disable this(const(E) val, bool success) const;
-            @disable this(immutable(E) val, bool success) immutable;
-        }
+        //         static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
+        //         static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+        //     }
+        // }
+        // else
+        // {
+        //     @disable this(const(E) val, bool success) const;
+        //     @disable this(immutable(E) val, bool success) immutable;
+        // }
     }
 
     static if (!is(T == void) && !isDefaultConstructorEnabled!Hook) @disable this();
 
     static if (!isCopyConstructorEnabled!Hook) @disable this(this);
-    static if (isChecked!Hook)
+
+    static if (isChecked!Hook || isRefCountedPayloadEnabled!Hook)
     {
         ~this()
         {
-            if (!checked)
+            static void onUnchecked()
             {
                 static if (hasOnUnchecked!Hook) __traits(getMember, Hook, "onUnchecked")();
                 else assert(0, "unchecked result");
             }
+
+            static if (isRefCountedPayloadEnabled!Hook)
+            {
+                if (!storage) return;
+                assert(storage.count > 0);
+
+                if (--storage.count) return;
+
+                // Done, deallocate
+                static if (isChecked!Hook) bool ch = checked;
+                destroy(storage.payload);
+                static if (enableGCScan) pureGcRemoveRange(&storage.payload);
+
+                pureFree(storage);
+                storage = null;
+
+                static if (isChecked!Hook) { if (!ch) onUnchecked(); }
+            }
+            else static if (isChecked!Hook) { if (!checked) onUnchecked(); }
         }
     }
 
@@ -363,8 +409,15 @@ struct Expected(T, E = string, Hook = Abort)
                 +/
                 void opAssign()(auto ref CT rhs)
                 {
-                    storage = Storage(forward!rhs);
-                    setState!CT();
+                    setState!CT(); // check state asserts before change
+                    auto s = state;
+                    static if (isRefCountedPayloadEnabled!Hook)
+                    {
+                        if (!storage) initialize(forward!rhs);
+                        else storage.payload = Payload(forward!rhs);
+                    }
+                    else storage = Payload(forward!rhs);
+                    setState!(CT)(s); // set previous state
 
                     static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
                     static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
@@ -468,10 +521,10 @@ struct Expected(T, E = string, Hook = Abort)
                 if (state != State.value)
                 {
                     static if (hasOnAccessEmptyValue!(Hook, E))
-                        __traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? trustedGetError() : E.init);
+                        __traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? getError() : E.init);
                     else return T.init;
                 }
-                return trustedGetValue();
+                return getValue();
             }
         } else {
             @property auto ref T value()
@@ -481,10 +534,10 @@ struct Expected(T, E = string, Hook = Abort)
                 if (state != State.value)
                 {
                     static if (hasOnAccessEmptyValue!(Hook, E))
-                        __traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? trustedGetError() : E.init);
+                        __traits(getMember, Hook, "onAccessEmptyValue")(state == State.error ? getError() : E.init);
                     else return T.init;
                 }
-                return trustedGetValue();
+                return getValue();
             }
         }
     }
@@ -516,7 +569,7 @@ struct Expected(T, E = string, Hook = Abort)
                 static if (hasOnAccessEmptyError!Hook) __traits(getMember, Hook, "onAccessEmptyError")();
                 else return E.init;
             }
-            return trustedGetError;
+            return getError;
         }
     } else {
         @property auto ref E error()
@@ -528,7 +581,7 @@ struct Expected(T, E = string, Hook = Abort)
                 static if (hasOnAccessEmptyError!Hook) __traits(getMember, Hook, "onAccessEmptyError")();
                 else return E.init;
             }
-            return trustedGetError;
+            return getError;
         }
     }
 
@@ -559,55 +612,150 @@ struct Expected(T, E = string, Hook = Abort)
     private:
 
     //FIXME: can probably be union instead, but that doesn't work well with destructors and copy constructors/postblits
-    //or change it for a couple of pointers and make the Expected payload refcounted
-    //that could be used to enforce result check too
-    struct Storage
+    //and need to be handled manually - so for now we use a safer variant
+    struct Payload
     {
         Types values;
 
-        // generate storage constructors
+        // generate payload constructors
         static foreach (i, CT; Types)
         {
-            @trusted this()(auto ref CT val)
+            this()(auto ref CT val)
             {
-                static if (isCopyable!CT) __traits(getMember, Storage, "values")[i] = val;
-                else __traits(getMember, Storage, "values")[i] = forward!val;
+                static if (isCopyable!CT) __traits(getMember, Payload, "values")[i] = val;
+                else __traits(getMember, Payload, "values")[i] = forward!val;
             }
 
-            static if (isCopyable!CT)
-            {
-                @trusted this()(auto ref const(CT) val) const { __traits(getMember, Storage, "values")[i] = val; }
-                @trusted this()(auto ref immutable(CT) val) immutable { __traits(getMember, Storage, "values")[i] = val; }
-            }
-            else
-            {
-                @disable this(const(CT) val) const;
-                @disable this(immutable(CT) val) immutable;
-            }
+            // static if (isCopyable!CT)
+            // {
+            //     this()(auto ref const(CT) val) const { __traits(getMember, Payload, "values")[i] = val; }
+            //     this()(auto ref immutable(CT) val) immutable { __traits(getMember, Payload, "values")[i] = val; }
+            // }
+            // else
+            // {
+            //     @disable this(const(CT) val) const;
+            //     @disable this(immutable(CT) val) immutable;
+            // }
         }
     }
 
-    //@trusted // needed for union
-    ref inout(E) trustedGetError()() inout
+    static if (isRefCountedPayloadEnabled!Hook)
     {
-        static if (Types.length == 1) return __traits(getMember, storage, "values")[0];
-        else return __traits(getMember, storage, "values")[1];
-    }
+        version (D_BetterC) enum enableGCScan = false;
+        else enum enableGCScan = hasIndirections!Payload;
 
-    static if (!is(T == void))
-    {
-        //@trusted // needed for union
-        ref inout(T) trustedGetValue()() inout
+        // purify memory management functions - see https://github.com/dlang/phobos/pull/4832
+        extern(C) pure nothrow @nogc static
         {
-            return __traits(getMember, storage, "values")[0];
+            pragma(mangle, "malloc") void* pureMalloc(size_t);
+            pragma(mangle, "free") void pureFree( void *ptr );
+            static if (enableGCScan)
+            {
+                pragma(mangle, "calloc") void* pureCalloc(size_t nmemb, size_t size);
+                pragma(mangle, "gc_addRange") void pureGcAddRange( in void* p, size_t sz, const TypeInfo ti = null );
+                pragma(mangle, "gc_removeRange") void pureGcRemoveRange( in void* p );
+            }
+        }
+
+        struct Impl
+        {
+            Payload payload;
+            State state;
+            size_t count;
+            static if (isChecked!Hook) bool checked;
+        }
+
+        void initialize(A...)(auto ref A args)
+        {
+            import std.conv : emplace;
+
+            allocateStore();
+            emplace(&storage.payload, args);
+            storage.count = 1;
+            storage.state = State.empty;
+            static if (isChecked!Hook) storage.checked = false;
+        }
+
+        void allocateStore() nothrow pure @trusted
+        {
+            assert(!storage);
+            static if (enableGCScan)
+            {
+                storage = cast(Impl*) pureCalloc(1, Impl.sizeof);
+                if (!storage) assert(0, "Memory allocation failed");
+                pureGcAddRange(&storage.payload, Payload.sizeof);
+            }
+            else
+            {
+                storage = cast(Impl*) pureMalloc(Impl.sizeof);
+                if (!storage) assert(0, "Memory allocation failed");
+            }
+        }
+
+        Impl* storage;
+
+        @property nothrow @safe pure @nogc
+        size_t refCount() const { return storage !is null ? storage.count : 0; }
+
+        @property nothrow @safe pure @nogc
+        State state() const { return storage !is null ? storage.state : State.empty; }
+
+        @property nothrow @safe pure @nogc
+        void state(State state) { assert(storage); storage.state = state; }
+
+        static if (isChecked!Hook)
+        {
+            @property nothrow @safe pure @nogc
+            bool checked() const { assert(storage); return storage.checked; }
+
+            @property nothrow @safe pure @nogc
+            void checked(bool ch) { assert(storage); storage.checked = ch; }
+        }
+
+        ref inout(E) getError()() inout
+        {
+            assert(storage);
+            static if (Types.length == 1) return __traits(getMember, storage.payload, "values")[0];
+            else return __traits(getMember, storage.payload, "values")[1];
+        }
+
+        static if (!is(T == void))
+        {
+            ref inout(T) getValue()() inout
+            {
+                assert(storage);
+                return __traits(getMember, storage.payload, "values")[0];
+            }
+        }
+
+        this(this) @safe pure nothrow @nogc
+        {
+            if (!storage) return;
+            ++storage.count;
+        }
+    }
+    else
+    {
+        Payload storage;
+        State state = State.empty;
+        static if (isChecked!Hook) bool checked = false;
+
+        ref inout(E) getError()() inout
+        {
+            static if (Types.length == 1) return __traits(getMember, storage, "values")[0];
+            else return __traits(getMember, storage, "values")[1];
+        }
+
+        static if (!is(T == void))
+        {
+            ref inout(T) getValue()() inout
+            {
+                return __traits(getMember, storage, "values")[0];
+            }
         }
     }
 
     enum State : ubyte { empty, value, error }
-
-    Storage storage;
-    State state = State.empty;
-    static if (!isCopyConstructorEnabled!Hook) bool checked = false;
 
     void setState(MT)(State known = State.empty)
     {
@@ -658,10 +806,50 @@ unittest
     static assert(!isCopyConstructorEnabled!Bar);
 }
 
+/++ Template to determine if hook defines that the $(LREF Expected) storage should
+    use refcounted state storage.
+
+    If this is enabled, payload is mallocated on the heap and dealocated with the
+    destruction of last $(Expected) instance.
+
+    See $(LREF hasOnUnchecked) handler, which can be used in combination with refcounted
+    payload to enforce that the result is checked.
++/
+template isRefCountedPayloadEnabled(Hook)
+{
+    static if (__traits(hasMember, Hook, "enableRefCountedPayload"))
+    {
+        static assert(
+            is(typeof(__traits(getMember, Hook, "enableRefCountedPayload")) : bool),
+            "Hook's enableCopyConstructor is expected to be of type bool"
+        );
+        enum isRefCountedPayloadEnabled = __traits(getMember, Hook, "enableRefCountedPayload");
+        static assert (
+            !isRefCountedPayloadEnabled || isCopyConstructorEnabled!Hook,
+            "Refcounted payload wouldn't work without copy constructor enabled"
+        );
+    }
+    else enum isRefCountedPayloadEnabled = false;
+}
+
+///
+unittest
+{
+    struct Foo {}
+    struct Bar {
+        static immutable bool enableCopyConstructor = false;
+        static immutable bool enableRefCountedPayload = true;
+    }
+    struct Hook { static immutable bool enableRefCountedPayload = true; }
+    static assert(!isRefCountedPayloadEnabled!Foo);
+    static assert(!__traits(compiles, isRefCountedPayloadEnabled!Bar));
+    static assert(isRefCountedPayloadEnabled!Hook);
+}
+
 // just a helper to determine check behavior
 private template isChecked(Hook)
 {
-    enum isChecked = !isCopyConstructorEnabled!Hook;
+    enum isChecked = !isCopyConstructorEnabled!Hook || isRefCountedPayloadEnabled!Hook;
 }
 
 /// Template to determine if provided Hook enables default constructor for $(LREF Expected)
@@ -771,8 +959,8 @@ template hasOnUnchecked(Hook)
             "Hook's onUnchecked is expected to be callable with no arguments"
         );
         static assert(
-            !isCopyConstructorEnabled!Hook,
-            "For unchecked check to work, it is currently needed to also disable copy constructor"
+            !isCopyConstructorEnabled!Hook || isRefCountedPayloadEnabled!Hook,
+            "For unchecked check to work, it is needed to also have disabled copy constructor or enabled reference counted payload"
         );
         enum hasOnUnchecked = true;
     }
@@ -981,6 +1169,70 @@ unittest
     assert(collectExceptionMsg!(Unexpected!string)(div(1, 0)) == "oops");
 }
 
+/++ Hook implementation that behaves same as $(LREF Abort) hook, but uses refcounted payload
+    instead, which also enables us to check, if the result was properly checked before it is
+    discarded.
++/
+struct RCAbort
+{
+static:
+    /++ Default constructor for $(LREF Expected) is disabled.
+        Same with the `opAssign`, so $(LREF Expected) can be only constructed
+        once and not modified afterwards.
+    +/
+    immutable bool enableDefaultConstructor = false;
+
+    /// Copy constructor is enabled so the reference counting makes sense
+    immutable bool enableCopyConstructor = true;
+
+    /// Enabled reference counted payload
+    immutable bool enableRefCountedPayload = true;
+
+    void onUnchecked() pure nothrow @nogc { assert(0, "result unchecked"); }
+}
+
+///
+@system unittest
+{
+    // behavior checks
+    static assert(!isDefaultConstructorEnabled!RCAbort);
+    static assert(isCopyConstructorEnabled!RCAbort);
+    static assert(isRefCountedPayloadEnabled!RCAbort);
+
+    // basics
+    assert(expected!(string, RCAbort)(42) == 42);
+    assert(unexpected!(int, RCAbort)("foo").error == "foo");
+
+    // checked
+    {
+        auto res = expected!(string, RCAbort)(42);
+        assert(!res.checked);
+        assert(res);
+        assert(res.checked);
+    }
+
+    // unchecked - throws assert
+    assertThrown!Throwable({ expected!(string, RCAbort)(42); }());
+
+    {
+        auto res = expected!(string, RCAbort)(42);
+        {
+            auto res2 = res;
+            assert(!res.checked);
+            assert(res.refCount == 2);
+            assert(res2.refCount == 2);
+        }
+        assert(res.refCount == 1);
+        assert(res.hasValue);
+    }
+
+    // chaining
+    assert(unexpected!(int, RCAbort)("foo").orElse!(() => expected!(string, RCAbort)(42)) == 42);
+    assert(expected!(string, RCAbort)(42).andThen!(() => unexpected!(int, RCAbort)("foo")).error == "foo");
+    assertThrown!Throwable(unexpected!(int, RCAbort)("foo").orElse!(() => expected!(string, RCAbort)(42)));
+    assertThrown!Throwable(expected!(string, RCAbort)(42).andThen!(() => unexpected!(int, RCAbort)("foo")));
+}
+
 /++ An exception that represents an error value.
 
     This is used by $(LREF Throw) hook when undefined value or error is
@@ -1009,7 +1261,7 @@ class Unexpected(T) : Exception
 /++
     Creates an $(LREF Expected) object from an expected value, with type inference.
 +/
-Expected!(T, E, Hook) expected(E = string, Hook = Abort, T)(T value)
+Expected!(T, E, Hook) expected(E = string, Hook = Abort, T)(auto ref T value)
 {
     return Expected!(T, E, Hook)(value);
 }
@@ -1089,7 +1341,7 @@ unittest
 /++
     Creates an $(LREF Expected) object from an error value, with type inference.
 +/
-Expected!(T, E, Hook) unexpected(T = void, Hook = Abort, E)(E err)
+Expected!(T, E, Hook) unexpected(T = void, Hook = Abort, E)(auto ref E err)
 {
     static if (Expected!(T, E, Hook).Types.length == 1 && !is(T == void))
         return Expected!(T, E, Hook)(err, false);
@@ -1721,4 +1973,41 @@ unittest
         static assert(!__traits(compiles, r.front));
         static assert(!__traits(compiles, r.popFront));
     }
+}
+
+//FIXME
+// unittest
+// {
+//     struct Value { int val; }
+
+//     assert(expected(Value(42)).hasValue);
+//     assert(expected(const Value(42)).hasValue);
+//     assert(expected(immutable Value(42)).hasValue);
+// }
+
+// RC payload
+unittest
+{
+    struct Hook {
+        static immutable bool enableRefCountedPayload = true;
+        static immutable bool enableDefaultConstructor = true;
+        static void onUnchecked() pure nothrow @nogc { assert(0, "result unchecked"); }
+    }
+
+    static assert(isDefaultConstructorEnabled!Hook);
+
+    {
+        auto e = expected!(bool, Hook)(42);
+        e = 43;
+        assert(e.value == 43);
+    }
+
+    struct Value { int val; }
+
+    assert(expected!(bool, Hook)(Value(42)).hasValue);
+    assert(expected!(bool, Hook)(true).hasValue);
+    assert(unexpected!(bool, Hook)(true).hasError);
+    //FIXME
+    // assert(expected!(bool, Hook)(const Value(42)).hasValue);
+    // assert(expected!(bool, Hook)(immutable Value(42)).hasValue);
 }
