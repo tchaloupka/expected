@@ -21,6 +21,7 @@ $(LIST
     * allows to define $(LREF Expected) without value (`void` for `T`)
     * provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection paradigm.
     * can enforce result check (with a cost)
+    * range interface
 )
 
 ## Description
