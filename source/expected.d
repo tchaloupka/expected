@@ -151,7 +151,6 @@ module expected;
     assert(foo(2));
     assert(foo(2).hasValue);
     assert(!foo(2).hasError);
-    debug writeln(foo(2).value);
     assert(foo(2).value == 21);
 
     assert(!foo(0));
@@ -239,11 +238,15 @@ version (unittest) {
 struct Expected(T, E = string, Hook = Abort)
     if (!is(E == void) && (isVoidValueEnabled!Hook || !is(T == void)))
 {
+    import std.algorithm : move;
     import std.functional: forward;
-    import std.meta : AliasSeq, Erase, NoDuplicates;
+    import std.meta : AliasSeq, Filter, NoDuplicates;
     import std.traits: isAssignable, isCopyable, hasIndirections, Unqual;
 
-    private alias Types = NoDuplicates!(Erase!(void, AliasSeq!(T, E)));
+    private template noVoid(T) { enum noVoid = !is(T == void); } // Erase removes qualifiers
+    private alias Types = NoDuplicates!(Filter!(noVoid, AliasSeq!(T, E)));
+
+    private template isMoveable(T) { enum isMoveable = __traits(compiles, (T a) { return a.move; }); }
 
     static foreach (i, CT; Types)
     {
@@ -261,13 +264,15 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isRefCountedPayloadEnabled!Hook)
             {
-                static if (isCopyable!CT) initialize(val);
-                else initialize(forward!val);
+                static if (isCopyable!CT) initialize(forward!val);
+                else static if (isMoveable!CT) initialize(move(val));
+                else static assert(0, "Can't consume " ~ CT.stringof);
             }
             else
             {
-                static if (isCopyable!CT) storage = Payload(val);
-                else storage = Payload(forward!val);
+                static if (isCopyable!CT) storage = Payload(forward!val);
+                else static if (isMoveable!CT) storage = Payload(move(val));
+                else static assert(0, "Can't consume " ~ CT.stringof);
             }
             setState!CT();
 
@@ -319,13 +324,15 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isRefCountedPayloadEnabled!Hook)
             {
-                static if (isCopyable!E) initialize(val);
-                else initialize(forward!val);
+                static if (isCopyable!E) initialize(forward!val);
+                else static if (isMoveable!E) initialize(move(val));
+                else static assert(0, "Can't consume " ~ E.stringof);
             }
             else
             {
-                static if (isCopyable!E) storage = Payload(val);
-                else storage = Payload(forward!val);
+                static if (isCopyable!E) storage = Payload(forward!val);
+                else static if (isMoveable!E) storage = Payload(val);
+                else static assert(0, "Can't consume " ~ E.stringof);
             }
             setState!E(success ? State.value : State.error);
 
@@ -622,8 +629,9 @@ struct Expected(T, E = string, Hook = Abort)
         {
             this()(auto ref CT val)
             {
-                static if (isCopyable!CT) __traits(getMember, Payload, "values")[i] = val;
-                else __traits(getMember, Payload, "values")[i] = forward!val;
+                static if (isCopyable!CT) __traits(getMember, Payload, "values")[i] = forward!val;
+                else static if (isMoveable!CT) __traits(getMember, Payload, "values")[i] = move(val);
+                else static assert(0, "Can't consume " ~ CT.stringof);
             }
 
             // static if (isCopyable!CT)
@@ -1975,15 +1983,25 @@ unittest
     }
 }
 
-//FIXME
-// unittest
-// {
-//     struct Value { int val; }
+unittest
+{
+    {
+        struct Value { int val; }
 
-//     assert(expected(Value(42)).hasValue);
-//     assert(expected(const Value(42)).hasValue);
-//     assert(expected(immutable Value(42)).hasValue);
-// }
+        assert(expected(Value(42)).hasValue);
+        assert(expected(const Value(42)).hasValue);
+        assert(expected(immutable Value(42)).hasValue);
+    }
+
+    {
+        struct DisabledValue { int val; @disable this(this); }
+
+        assert(expected(DisabledValue(42)).hasValue);
+        //FIXME?
+        //assert(expected(const DisabledValue(42)).hasValue);
+        // assert(expected(immutable DisabledValue(42)).hasValue);
+    }
+}
 
 // RC payload
 unittest
@@ -2007,7 +2025,11 @@ unittest
     assert(expected!(bool, Hook)(Value(42)).hasValue);
     assert(expected!(bool, Hook)(true).hasValue);
     assert(unexpected!(bool, Hook)(true).hasError);
-    //FIXME
-    // assert(expected!(bool, Hook)(const Value(42)).hasValue);
-    // assert(expected!(bool, Hook)(immutable Value(42)).hasValue);
+    assert(expected!(bool, Hook)(const Value(42)).hasValue);
+    assert(expected!(bool, Hook)(immutable Value(42)).hasValue);
+
+    //FIXME?
+    //immutable r = expected!(bool, Hook)(immutable Value(42));
+    // immutable r = Expected!(immutable(Value), bool, Hook)(immutable Value(42));
+    // assert(r.value == 42);
 }
