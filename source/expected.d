@@ -15,7 +15,7 @@ Similar work is [expectations](http://code.dlang.org/packages/expectations) by P
 $(LIST
     * lightweight, no other external dependencies
     * works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
-    * provides methods: `ok`, `err`, `consume`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
+    * provides methods: `ok`, `err`, `consume`, `expect`, `expectErr`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
     * type inference for ease of use with `ok` and `err`
     * allows to use same types for `T` and `E`
     * allows to define $(LREF Expected) without value (`void` for `T`) - can be disabled with custom `Hook`
@@ -1416,6 +1416,69 @@ unittest
         assert(!res);
         assert(res.error == 42);
     }
+}
+
+/++ Unwraps a result, yielding the content of expected value.
+    If there is none, or error value, it throws $(D assert(0)) with the provided message.
+
+    Params:
+        res = $(LREF Expected) to check the result of
+        msg = message to use with assert
++/
+T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
+{
+    import std.format : format;
+
+    //TODO: hook for customization
+
+    static if (!is(T == void)) { if (res.hasValue) return res.value; }
+    else  { if (!res.hasError) return; }
+
+    if (res.hasError) assert(0, format!"%s: %s"(msg, res.error));
+    else assert(0, format!"%s: empty"(msg));
+}
+
+///
+@("expect")
+@system unittest
+{
+    assert(ok(42).expect("oops") == 42);
+    ok().expect("oops"); // void value
+    assert(collectExceptionMsg!Throwable(Expected!int.init.expect("oops")) == "oops: empty");
+    assert(collectExceptionMsg!Throwable(err!int("foo").expect("oops")) == "oops: foo");
+}
+
+/++ Unwraps a result, yielding the content of an error value.
+    If there is none, or success value, it throws $(D assert(0)) with the provided message.
+
+    Params:
+        res = $(LREF Expected) to check the result of
+        msg = message to use with assert
++/
+E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
+{
+    import std.format : format;
+
+    //TODO: hook for customization
+
+    if (res.hasError) return res.error;
+
+    static if (!is(T == void))
+    {
+        if (res.hasValue) assert(0, format!"%s: %s"(msg, res.value));
+        else assert(0, format!"%s: empty"(msg));
+    }
+    else assert(0, format!"%s: empty"(msg));
+}
+
+///
+@("expectErr")
+@system unittest
+{
+    assert(err("foo").expectErr("oops") == "foo");
+    assert(collectExceptionMsg!Throwable(Expected!int.init.expectErr("oops")) == "oops: empty");
+    assert(collectExceptionMsg!Throwable(ok(42).expectErr("oops")) == "oops: 42");
+    assert(collectExceptionMsg!Throwable(ok().expectErr("oops")) == "oops: empty"); // void value
 }
 
 /++

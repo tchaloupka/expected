@@ -21,7 +21,7 @@ Similar work is [expectations](http://code.dlang.org/packages/expectations) by P
 
 * lightweight, no other external dependencies
 * works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
-* provides methods: `ok`, `err`, `consume`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
+* provides methods: `ok`, `err`, `consume`, `expect`, `expectErr`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
 * type inference for ease of use with `ok` and `err`
 * allows to use same types for `T` and `E`
 * allows to define `Expected` without value (`void` for `T`) - can be disabled with custom `Hook`
