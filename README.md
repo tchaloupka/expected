@@ -21,8 +21,8 @@ Similar work is [expectations](http://code.dlang.org/packages/expectations) by P
 
 * lightweight, no other external dependencies
 * works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
-* provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
-* type inference for ease of use with `expected` and `unexpected`
+* provides methods: `ok`, `err`, `consume`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
+* type inference for ease of use with `ok` and `err`
 * allows to use same types for `T` and `E`
 * allows to define `Expected` without value (`void` for `T`) - can be disabled with custom `Hook`
 * provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection paradigm.
@@ -45,13 +45,13 @@ path/to/adrdox/doc2 --genSearchIndex --genSource -o generated-docs source
 
 ```D
 auto foo(int i) {
-	if (i == 0) return unexpected!int("oops");
-	return expected(42 / i);
+    if (i == 0) return err!int("oops");
+   return ok(42 / i);
 }
 
 auto bar(int i) {
-	if (i == 0) throw new Exception("err");
-	return i-1;
+    if (i == 0) throw new Exception("err");
+    return i-1;
 }
 
 // basic checks
@@ -68,11 +68,11 @@ assert(foo(0).error == "oops");
 // void result
 assert(Expected!(void)()); // no error -> success
 assert(!Expected!(void)().hasError);
-// assert(unexpected("foo").value); // doesn't have hasValue and value properties
+// assert(err("foo").value); // doesn't have hasValue and value properties
 
 // expected from throwing function
-assert(expected!bar(1) == 0);
-assert(expected!bar(0).error.msg == "err");
+assert(ok!bar(1) == 0);
+assert(ok!bar(0).error.msg == "err");
 
 // orElse
 assert(foo(2).orElse!(() => 0) == 21);

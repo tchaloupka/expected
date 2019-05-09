@@ -15,8 +15,8 @@ Similar work is [expectations](http://code.dlang.org/packages/expectations) by P
 $(LIST
     * lightweight, no other external dependencies
     * works with `pure`, `@safe`, `@nogc`, `nothrow`, and `immutable`
-    * provides methods: `expected`, `unexpected`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
-    * type inference for ease of use with `expected` and `unexpected`
+    * provides methods: `ok`, `err`, `consume`, `andThen`, `orElse`, `map`, `mapError`, `mapOrElse`
+    * type inference for ease of use with `ok` and `err`
     * allows to use same types for `T` and `E`
     * allows to define $(LREF Expected) without value (`void` for `T`) - can be disabled with custom `Hook`
     * provides facility to change the $(LREF Expected) behavior by custom `Hook` implementation using the Design by introspection paradigm.
@@ -65,8 +65,8 @@ $(BOOKTABLE ,
 
         That means when function returns $(LREF expected) value, it returns instance
         of $(LREF Expected) with a success value.
-        But when it tries to return $(LREF unexpected) error, $(D Exception)
-        is thrown right away, i.e. $(LREF Expected) fails in constructor.
+        But when it tries to return error, $(D Exception) is thrown right away,
+        i.e. $(LREF Expected) fails in constructor.
     ))
     $(TR $(TD $(LREF RCAbort)) $(TD
         Similar to $(LREF Abort) hook but uses reference counted payload instead
@@ -135,11 +135,12 @@ Author: Tomáš Chaloupka
 module expected;
 
 /// $(H3 Basic usage)
+@("Basic usage example")
 @safe unittest
 {
     auto foo(int i) {
-        if (i == 0) return unexpected!int("oops");
-        return expected(42 / i);
+        if (i == 0) return err!int("oops");
+        return ok(42 / i);
     }
 
     auto bar(int i) {
@@ -159,13 +160,13 @@ module expected;
     assert(foo(0).error == "oops");
 
     // void result
-    assert(expected()); // no error -> success
-    assert(!expected().hasError);
-    // assert(unexpected("foo").hasValue); // doesn't have hasValue and value properties
+    assert(ok()); // no error -> success
+    assert(!ok().hasError);
+    // assert(err("foo").hasValue); // doesn't have hasValue and value properties
 
     // expected from throwing function
-    assert(expected!bar(1) == 0);
-    assert(expected!bar(0).error.msg == "err");
+    assert(consume!bar(1) == 0);
+    assert(consume!bar(0).error.msg == "err");
 
     // orElse
     assert(foo(2).orElse!(() => 0) == 21);
@@ -189,6 +190,7 @@ module expected;
 }
 
 /// $(H3 Advanced usage - behavior modification)
+@("Advanced usage example")
 unittest
 {
     import exp = expected;
@@ -201,20 +203,19 @@ unittest
     }
 
     // create wrappers for simplified usage of our Expected
-    auto expected(T)(T val) { return exp.expected!(Exception, Throw)(val); }
-    auto unexpected(T)(Exception err) { return exp.unexpected!(T, Throw)(err); }
+    auto ok(T)(T val) { return exp.ok!(Exception, Throw)(val); }
+    auto err(T)(Exception err) { return exp.err!(T, Throw)(err); }
 
     // use it as normal
-    assert(expected(42) == 42);
-    assert(unexpected!int(new Exception("foo")).orElse(0) == 0);
-    assertThrown(expected(42).error);
-    assertThrown(unexpected!int(new Exception("bar")).value);
+    assert(ok(42) == 42);
+    assert(err!int(new Exception("foo")).orElse(0) == 0);
+    assertThrown(ok(42).error);
+    assertThrown(err!int(new Exception("bar")).value);
 }
 
 version (unittest) {
     import std.algorithm : reverse;
     import std.exception : assertThrown, collectExceptionMsg;
-    import std.stdio : writeln;
 }
 
 @safe:
@@ -231,8 +232,8 @@ version (unittest) {
     Default behavior of $(LREF Expected) can be modified by the `Hook` template parameter.
 
     Params:
-        T    = represents the expected value
-        E    = represents the reason explaining why it doesn’t contains avalue of type T, that is the unexpected value.
+        T    = represents type of the expected value
+        E    = represents type of the error value.
         Hook = defines the $(LREF Expected) type behavior
 +/
 struct Expected(T, E = string, Hook = Abort)
@@ -819,6 +820,7 @@ template isCopyConstructorEnabled(Hook)
 }
 
 ///
+@("isCopyConstructorEnabled")
 unittest
 {
     struct Foo {}
@@ -854,6 +856,7 @@ template isRefCountedPayloadEnabled(Hook)
 }
 
 ///
+@("isRefCountedPayloadEnabled")
 unittest
 {
     struct Foo {}
@@ -888,6 +891,7 @@ template isDefaultConstructorEnabled(Hook)
 }
 
 ///
+@("isDefaultConstructorEnabled")
 unittest
 {
     struct Foo {}
@@ -911,11 +915,12 @@ template isVoidValueEnabled(Hook)
 }
 
 ///
+@("isVoidValueEnabled")
 unittest
 {
     struct Hook { static immutable bool enableVoidValue = false; }
-    assert(!expected().hasError); // void values are enabled by default
-    static assert(!__traits(compiles, expected!(string, Hook)())); // won't compile
+    assert(!ok().hasError); // void values are enabled by default
+    static assert(!__traits(compiles, ok!(string, Hook)())); // won't compile
 }
 
 /// Template to determine if hook provides function called on empty value.
@@ -933,6 +938,7 @@ template hasOnAccessEmptyValue(Hook, E)
 }
 
 ///
+@("hasOnAccessEmptyValue")
 unittest
 {
     struct Foo {}
@@ -957,6 +963,7 @@ template hasOnAccessEmptyError(Hook)
 }
 
 ///
+@("hasOnAccessEmptyError")
 unittest
 {
     struct Foo {}
@@ -989,6 +996,7 @@ template hasOnUnchecked(Hook)
 }
 
 ///
+@("hasOnUnchecked")
 @system unittest
 {
     struct Foo {}
@@ -1004,14 +1012,14 @@ template hasOnUnchecked(Hook)
     static assert(hasOnUnchecked!Hook);
 
     // copy constructor
-    auto exp = expected!(string, Hook)(42);
-    auto exp2 = unexpected!(int, Hook)("foo");
-    static assert(!__traits(compiles, exp.andThen(expected!(string, Hook)(42)))); // disabled cc
+    auto exp = ok!(string, Hook)(42);
+    auto exp2 = err!(int, Hook)("foo");
+    static assert(!__traits(compiles, exp.andThen(ok!(string, Hook)(42)))); // disabled cc
     assert(exp.andThen(exp2).error == "foo"); // passed by ref so no this(this) called
 
     // check for checked result
-    assertThrown({ expected!(string, Hook)(42); }());
-    assertThrown({ unexpected!(void, Hook)("foo"); }());
+    assertThrown({ ok!(string, Hook)(42); }());
+    assertThrown({ err!(void, Hook)("foo"); }());
 }
 
 /++ Template to determine if hook provides function called when value is set.
@@ -1030,6 +1038,7 @@ template hasOnValueSet(Hook, T)
 }
 
 ///
+@("hasOnValueSet")
 unittest
 {
     struct Hook {
@@ -1037,7 +1046,8 @@ unittest
         static void onValueSet(T)(auto ref T val) { lastValue = val; }
     }
 
-    auto res = expected!(string, Hook)(42);
+    static assert(hasOnValueSet!(Hook, int));
+    auto res = ok!(string, Hook)(42);
     assert(res.hasValue);
     assert(Hook.lastValue == 42);
 }
@@ -1058,6 +1068,7 @@ template hasOnErrorSet(Hook, T)
 }
 
 ///
+@("hasOnErrorSet")
 unittest
 {
     struct Hook {
@@ -1065,7 +1076,8 @@ unittest
         static void onErrorSet(E)(auto ref E err) { lastErr = err; }
     }
 
-    auto res = unexpected!(int, Hook)("foo");
+    static assert(hasOnErrorSet!(Hook, string));
+    auto res = err!(int, Hook)("foo");
     assert(res.hasError);
     assert(Hook.lastErr == "foo");
 }
@@ -1084,17 +1096,18 @@ static:
     /// Handler for case when empty value is accessed.
     void onAccessEmptyValue(E)(E err) nothrow @nogc
     {
-        assert(0, "Can't access value of unexpected");
+        assert(0, "Value not set");
     }
 
     /// Handler for case when empty error is accessed.
     void onAccessEmptyError() nothrow @nogc
     {
-        assert(0, "Can't access error on expected value");
+        assert(0, "Error not set");
     }
 }
 
 ///
+@("Abort")
 @system unittest
 {
     static assert(!isDefaultConstructorEnabled!Abort);
@@ -1102,8 +1115,8 @@ static:
     static assert(hasOnAccessEmptyValue!(Abort, int));
     static assert(hasOnAccessEmptyError!Abort);
 
-    assertThrown!Throwable(expected(42).error);
-    assertThrown!Throwable(unexpected!int("foo").value);
+    assertThrown!Throwable(ok(42).error);
+    assertThrown!Throwable(err!int("foo").value);
 }
 
 /++ Hook implementation that throws exceptions instead of default assert behavior.
@@ -1140,6 +1153,7 @@ static:
 }
 
 ///
+@("Throw")
 unittest
 {
     static assert(!isDefaultConstructorEnabled!Throw);
@@ -1147,9 +1161,9 @@ unittest
     static assert(hasOnAccessEmptyValue!(Throw, int));
     static assert(hasOnAccessEmptyError!Throw);
 
-    assertThrown!(Unexpected!string)(expected!(string, Throw)(42).error);
-    assertThrown!(Unexpected!string)(unexpected!(int, Throw)("foo").value);
-    assertThrown!(Unexpected!int)(unexpected!(bool, Throw)(-1).value);
+    assertThrown!(Unexpected!string)(ok!(string, Throw)(42).error);
+    assertThrown!(Unexpected!string)(err!(int, Throw)("foo").value);
+    assertThrown!(Unexpected!int)(err!(bool, Throw)(-1).value);
 }
 
 /++ Hook implementation that behaves like a thrown exception.
@@ -1177,14 +1191,15 @@ static:
 }
 
 ///
+@("AsException")
 unittest
 {
     static assert(!isDefaultConstructorEnabled!AsException);
     static assert(hasOnErrorSet!(AsException, string));
 
     auto div(int a, int b) {
-        if (b != 0) return expected!(string, AsException)(a / b);
-        return unexpected!(int, AsException)("oops");
+        if (b != 0) return ok!(string, AsException)(a / b);
+        return err!(int, AsException)("oops");
     }
 
     assert(div(10, 2) == 5);
@@ -1214,6 +1229,7 @@ static:
 }
 
 ///
+@("RCAbort")
 @system unittest
 {
     // behavior checks
@@ -1222,22 +1238,22 @@ static:
     static assert(isRefCountedPayloadEnabled!RCAbort);
 
     // basics
-    assert(expected!(string, RCAbort)(42) == 42);
-    assert(unexpected!(int, RCAbort)("foo").error == "foo");
+    assert(ok!(string, RCAbort)(42) == 42);
+    assert(err!(int, RCAbort)("foo").error == "foo");
 
     // checked
     {
-        auto res = expected!(string, RCAbort)(42);
+        auto res = ok!(string, RCAbort)(42);
         assert(!res.checked);
         assert(res);
         assert(res.checked);
     }
 
     // unchecked - throws assert
-    assertThrown!Throwable({ expected!(string, RCAbort)(42); }());
+    assertThrown!Throwable({ ok!(string, RCAbort)(42); }());
 
     {
-        auto res = expected!(string, RCAbort)(42);
+        auto res = ok!(string, RCAbort)(42);
         {
             auto res2 = res;
             assert(!res.checked);
@@ -1249,10 +1265,10 @@ static:
     }
 
     // chaining
-    assert(unexpected!(int, RCAbort)("foo").orElse!(() => expected!(string, RCAbort)(42)) == 42);
-    assert(expected!(string, RCAbort)(42).andThen!(() => unexpected!(int, RCAbort)("foo")).error == "foo");
-    assertThrown!Throwable(unexpected!(int, RCAbort)("foo").orElse!(() => expected!(string, RCAbort)(42)));
-    assertThrown!Throwable(expected!(string, RCAbort)(42).andThen!(() => unexpected!(int, RCAbort)("foo")));
+    assert(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)) == 42);
+    assert(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")).error == "foo");
+    assertThrown!Throwable(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
+    assertThrown!Throwable(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
 }
 
 /++ An exception that represents an error value.
@@ -1283,30 +1299,31 @@ class Unexpected(T) : Exception
 /++
     Creates an $(LREF Expected) object from an expected value, with type inference.
 +/
-Expected!(T, E, Hook) expected(E = string, Hook = Abort, T)(auto ref T value)
+Expected!(T, E, Hook) ok(E = string, Hook = Abort, T)(auto ref T value)
 {
     return Expected!(T, E, Hook)(value);
 }
 
 /// ditto
-Expected!(void, E, Hook) expected(E = string, Hook = Abort)()
+Expected!(void, E, Hook) ok(E = string, Hook = Abort)()
 {
     return Expected!(void, E, Hook)();
 }
 
-// expected
+///
+@("Expected from value")
 unittest
 {
     // void
     {
-        auto res = expected();
+        auto res = ok();
         static assert(is(typeof(res) == Expected!(void, string)));
         assert(res);
     }
 
     // int
     {
-        auto res = expected(42);
+        auto res = ok(42);
         static assert(is(typeof(res) == Expected!(int, string)));
         assert(res);
         assert(res.value == 42);
@@ -1314,7 +1331,7 @@ unittest
 
     // string
     {
-        auto res = expected("42");
+        auto res = ok("42");
         static assert(is(typeof(res) == Expected!(string, string)));
         assert(res);
         assert(res.value == "42");
@@ -1322,7 +1339,7 @@ unittest
 
     // other error type
     {
-        auto res = expected!bool(42);
+        auto res = ok!bool(42);
         static assert(is(typeof(res) == Expected!(int, bool)));
         assert(res);
         assert(res.value == 42);
@@ -1333,49 +1350,52 @@ unittest
 
     If the function is `nothrow`, it just returns it's result using $(LREF Expected).
 
-    If not, then it uses `try catch` block and constructs $(LREF Expected) with value or error.
+    If not, then it consumes it's possible $(D Exception) using `try catch` block and
+    constructs $(LREF Expected) in regards of the result.
 +/
-template expected(alias fun, Hook = Abort)
+template consume(alias fun, Hook = Abort)
 {
-    auto expected(Args...)(auto ref Args args) if (is(typeof(fun(args))))
+    auto consume(Args...)(auto ref Args args) if (is(typeof(fun(args))))
     {
         import std.traits : hasFunctionAttributes;
 
         alias T = typeof(fun(args));
-        static if (is(hasFunctionAttributes!(fun, "nothrow"))) return expected!Exception(fun(args));
+        static if (is(hasFunctionAttributes!(fun, "nothrow"))) return ok!Exception(fun(args));
         else
         {
             try return Expected!(T, Exception)(fun(args));
-            catch (Exception ex) return unexpected!T(ex);
+            catch (Exception ex) return err!T(ex);
         }
     }
 }
 
 ///
+@("consume from function call")
 unittest
 {
     auto fn(int v) { if (v == 42) throw new Exception("don't panic"); return v; }
 
-    assert(expected!fn(1) == 1);
-    assert(expected!fn(42).error.msg == "don't panic");
+    assert(consume!fn(1) == 1);
+    assert(consume!fn(42).error.msg == "don't panic");
 }
 
 /++
     Creates an $(LREF Expected) object from an error value, with type inference.
 +/
-Expected!(T, E, Hook) unexpected(T = void, Hook = Abort, E)(auto ref E err)
+Expected!(T, E, Hook) err(T = void, Hook = Abort, E)(auto ref E err)
 {
     static if (Expected!(T, E, Hook).Types.length == 1 && !is(T == void))
         return Expected!(T, E, Hook)(err, false);
     else return Expected!(T, E, Hook)(err);
 }
 
-//unexpected
+///
+@("Expected from error value")
 unittest
 {
     // implicit void value type
     {
-        auto res = unexpected("foo");
+        auto res = err("foo");
         static assert(is(typeof(res) == Expected!(void, string)));
         assert(!res);
         assert(res.error == "foo");
@@ -1383,7 +1403,7 @@ unittest
 
     // bool
     {
-        auto res = unexpected!int("42");
+        auto res = err!int("42");
         static assert(is(typeof(res) == Expected!(int, string)));
         assert(!res);
         assert(res.error == "42");
@@ -1391,7 +1411,7 @@ unittest
 
     // other error type
     {
-        auto res = unexpected!bool(42);
+        auto res = err!bool(42);
         static assert(is(typeof(res) == Expected!(bool, int)));
         assert(!res);
         assert(res.error == 42);
@@ -1424,21 +1444,22 @@ auto ref EX andThen(alias pred, EX)(auto ref EX exp)
 }
 
 ///
+@("andThen")
 unittest
 {
-    assert(expected(42).andThen(expected(1)) == 1);
-    assert(expected(42).andThen!(() => expected(0)) == 0);
-    assert(expected(42).andThen(unexpected!int("foo")).error == "foo");
-    assert(expected(42).andThen!(() => unexpected!int("foo")).error == "foo");
-    assert(unexpected!int("foo").andThen(expected(42)).error == "foo");
-    assert(unexpected!int("foo").andThen!(() => expected(42)).error == "foo");
-    assert(unexpected!int("foo").andThen(unexpected!int("bar")).error == "foo");
-    assert(unexpected!int("foo").andThen!(() => unexpected!int("bar")).error == "foo");
+    assert(ok(42).andThen(ok(1)) == 1);
+    assert(ok(42).andThen!(() => ok(0)) == 0);
+    assert(ok(42).andThen(err!int("foo")).error == "foo");
+    assert(ok(42).andThen!(() => err!int("foo")).error == "foo");
+    assert(err!int("foo").andThen(ok(42)).error == "foo");
+    assert(err!int("foo").andThen!(() => ok(42)).error == "foo");
+    assert(err!int("foo").andThen(err!int("bar")).error == "foo");
+    assert(err!int("foo").andThen!(() => err!int("bar")).error == "foo");
 
     // with void value
-    assert(expected().andThen!(() => expected()));
-    assert(expected().andThen!(() => unexpected("foo")).error == "foo");
-    assert(unexpected("foo").andThen!(() => expected()).error == "foo");
+    assert(ok().andThen!(() => ok()));
+    assert(ok().andThen!(() => err("foo")).error == "foo");
+    assert(err("foo").andThen!(() => ok()).error == "foo");
 }
 
 /++
@@ -1474,20 +1495,21 @@ auto ref orElse(alias pred, EX)(auto ref EX exp)
 }
 
 ///
+@("orElse")
 unittest
 {
-    assert(expected(42).orElse(0) == 42);
-    assert(expected(42).orElse!(() => 0) == 42);
-    assert(unexpected!int("foo").orElse(0) == 0);
-    assert(unexpected!int("foo").orElse!(() => 0) == 0);
-    assert(expected(42).orElse!(() => expected(0)) == 42);
-    assert(unexpected!int("foo").orElse!(() => expected(42)) == 42);
-    assert(unexpected!int("foo").orElse!(() => unexpected!int("bar")).error == "bar");
+    assert(ok(42).orElse(0) == 42);
+    assert(ok(42).orElse!(() => 0) == 42);
+    assert(err!int("foo").orElse(0) == 0);
+    assert(err!int("foo").orElse!(() => 0) == 0);
+    assert(ok(42).orElse!(() => ok(0)) == 42);
+    assert(err!int("foo").orElse!(() => ok(42)) == 42);
+    assert(err!int("foo").orElse!(() => err!int("bar")).error == "bar");
 
     // with void value
-    assert(expected().orElse!(() => unexpected("foo")));
-    assert(unexpected("foo").orElse!(() => expected()));
-    assert(unexpected("foo").orElse!(() => unexpected("bar")).error == "bar");
+    assert(ok().orElse!(() => err("foo")));
+    assert(err("foo").orElse!(() => ok()));
+    assert(err("foo").orElse!(() => err("bar")).error == "bar");
 }
 
 /++
@@ -1517,29 +1539,30 @@ template map(alias op, Hook = Abort)
         static if (is(T == void)) alias U = typeof(op());
         else alias U = typeof(op(self.value));
 
-        if (self.hasError) return unexpected!(U, Hook)(self.error);
+        if (self.hasError) return err!(U, Hook)(self.error);
         else
         {
-            static if (is(T == void)) return expected!(E, Hook)(op());
-            else return expected!(E, Hook)(op(self.value));
+            static if (is(T == void)) return ok!(E, Hook)(op());
+            else return ok!(E, Hook)(op(self.value));
         }
     }
 }
 
 ///
+@("map")
 unittest
 {
     {
-        assert(expected(42).map!(a => a/2).value == 21);
-        assert(expected().map!(() => 42).value == 42);
-        assert(unexpected!int("foo").map!(a => 42).error == "foo");
-        assert(unexpected("foo").map!(() => 42).error == "foo");
+        assert(ok(42).map!(a => a/2).value == 21);
+        assert(ok().map!(() => 42).value == 42);
+        assert(err!int("foo").map!(a => 42).error == "foo");
+        assert(err("foo").map!(() => 42).error == "foo");
     }
 
     // remap hook
     {
         static struct Hook {}
-        auto res = expected(42).map!(a => a/2, Hook);
+        auto res = ok(42).map!(a => a/2, Hook);
         assert(res == 21);
         static assert(is(typeof(res) == Expected!(int, string, Hook)));
     }
@@ -1573,29 +1596,30 @@ template mapError(alias op, Hook = Abort)
 
         static if (!is(T == void))
         {
-            if (self.hasValue) return expected!(U, Hook)(self.value);
+            if (self.hasValue) return ok!(U, Hook)(self.value);
         }
-        return unexpected!(T, Hook)(op(self.error));
+        return err!(T, Hook)(op(self.error));
     }
 }
 
 ///
+@("mapError")
 unittest
 {
     {
-        assert(expected(42).mapError!(e => e).value == 42);
-        assert(unexpected("foo").mapError!(e => 42).error == 42);
-        assert(unexpected("foo").mapError!(e => new Exception(e)).error.msg == "foo");
+        assert(ok(42).mapError!(e => e).value == 42);
+        assert(err("foo").mapError!(e => 42).error == 42);
+        assert(err("foo").mapError!(e => new Exception(e)).error.msg == "foo");
     }
 
     // remap hook
     {
         static struct Hook {}
-        auto res = expected(42).mapError!(e => e, Hook);
+        auto res = ok(42).mapError!(e => e, Hook);
         assert(res == 42);
         static assert(is(typeof(res) == Expected!(int, string, Hook)));
 
-        auto res2 = unexpected!int("foo").mapError!(e => "bar", Hook);
+        auto res2 = err!int("foo").mapError!(e => "bar", Hook);
         assert(res2.error == "bar");
         static assert(is(typeof(res2) == Expected!(int, string, Hook)));
     }
@@ -1645,429 +1669,11 @@ template mapOrElse(alias valueOp, alias errorOp)
 }
 
 ///
+@("mapOrElse")
 unittest
 {
-    assert(expected(42).mapOrElse!(v => v/2, e => 0) == 21);
-    assert(expected().mapOrElse!(() => true, e => false));
-    assert(unexpected!int("foo").mapOrElse!(v => v/2, e => 42) == 42);
-    assert(!unexpected("foo").mapOrElse!(() => true, e => false));
-}
-
-// -- global tests --
-
-// Expected.init
-@system nothrow unittest
-{
-    struct EnableDefaultConstructor { static immutable bool enableDefaultConstructor = true; }
-
-    {
-        auto res = Expected!(int, string).init;
-        assert(!res.hasValue && !res.hasError);
-        assert(res);
-        assertThrown!Throwable(res.value);
-        assertThrown!Throwable(res.error);
-        static assert(!__traits(compiles, res = 42));
-    }
-
-    {
-        auto res = Expected!(int, string, EnableDefaultConstructor).init;
-        assert(!res.hasValue && !res.hasError);
-        assert(res);
-        assert(res.value == 0);
-        assert(res.error is null);
-        res = 42;
-        assert(res.value == 42);
-    }
-
-    // T == void
-    {
-        auto res = Expected!(void, string).init;
-        static assert(!__traits(compiles, res.hasValue));
-        static assert(!__traits(compiles, res.value));
-        static assert(!__traits(compiles, res = "foo"));
-        assert(!res.hasError);
-        assert(res);
-        assertThrown!Throwable(res.error);
-    }
-
-    // T == void
-    {
-        auto res = Expected!(void, string, EnableDefaultConstructor).init;
-        static assert(!__traits(compiles, res.hasValue));
-        static assert(!__traits(compiles, res.value));
-        assert(!res.hasError);
-        assert(res.state == Expected!(void, string, EnableDefaultConstructor).State.empty);
-        assert(res);
-        assert(res.error is null);
-        res = "foo";
-        assert(res.error == "foo");
-    }
-}
-
-// Default constructor - disabled
-unittest
-{
-    static assert(!__traits(compiles, Expected!(int, string)()));
-}
-
-// Default constructor - enabled
-@system nothrow unittest
-{
-    struct EnableDefaultConstructor { static immutable bool enableDefaultConstructor = true; }
-    {
-        auto res = Expected!(int, string, EnableDefaultConstructor)();
-        assert(!res.hasValue && !res.hasError);
-        assert(res);
-        assert(res.value == 0);
-        assert(res.error is null);
-        res = 42;
-        assert(res);
-        assert(res.value == 42);
-    }
-
-    {
-        auto res = Expected!(void, string, EnableDefaultConstructor)();
-        assert(!res.hasError);
-        assert(res);
-        assert(res.error is null);
-        res = "foo";
-        assert(res.hasError);
-        assert(!res);
-        assert(res.error == "foo");
-    }
-}
-
-// Default types
-nothrow @nogc unittest
-{
-    auto res = Expected!(int)(42);
-    assert(res);
-    assert(res.hasValue && !res.hasError);
-    assert(res.value == 42);
-    res.value = 43;
-    assert(res.value == 43);
-}
-
-// Default types with const payload
-nothrow @nogc unittest
-{
-    alias Exp = Expected!(const(int));
-    static assert(is(typeof(Exp.init.value) == const(int)));
-    auto res = Exp(42);
-    assert(res);
-    assert(res.hasValue && !res.hasError);
-    assert(res.value == 42);
-    static assert(!__traits(compiles, res.value = res.value));
-}
-
-// Default types with immutable payload
-unittest
-{
-    alias Exp = Expected!(immutable(int));
-    static assert(is(typeof(Exp.init.value) == immutable(int)));
-    auto res = Exp(42);
-    assert(res);
-    assert(res.hasValue && !res.hasError);
-    assert(res.value == 42);
-    static assert(!__traits(compiles, res.value = res.value));
-}
-
-// opAssign
-@system nothrow unittest
-{
-    struct EnableDefaultConstructor { static immutable bool enableDefaultConstructor = true; }
-    // value
-    {
-        auto res = Expected!(int, string, EnableDefaultConstructor).init;
-        res = 42;
-        assert(res);
-        assert(res.hasValue && !res.hasError);
-        assert(res.value == 42);
-        res = 43;
-        assertThrown!Throwable(res = "foo");
-    }
-
-    // error
-    {
-        auto res = Expected!(int, string, EnableDefaultConstructor)("42");
-        assert(!res.hasValue && res.hasError);
-        assert(res.error == "42");
-        res = "foo";
-        assert(res.error == "foo");
-        assertThrown!Throwable(res = 42);
-    }
-}
-
-// Same types
-@system nothrow unittest
-{
-    // value
-    {
-        alias Exp = Expected!(int, int);
-        auto res = Exp(42);
-        assert(res);
-        assert(res.hasValue && !res.hasError);
-        assert(res.value == 42);
-        assertThrown!Throwable(res.error());
-    }
-
-    // error
-    {
-        alias Exp = Expected!(int, int);
-        auto res = Exp(42, false);
-        assert(!res);
-        assert(!res.hasValue && res.hasError);
-        assert(res.error == 42);
-        assertThrown!Throwable(res.value());
-        assert(unexpected!int(42).error == 42);
-    }
-
-    // immutable value
-    {
-        alias Exp = Expected!(immutable(int), immutable(int));
-        auto res = Exp(immutable int(42));
-        assert(res);
-        assert(res.hasValue && !res.hasError);
-        assert(res.value == 42);
-        assertThrown!Throwable(res.error());
-    }
-
-    // immutable error
-    {
-        alias Exp = Expected!(immutable(int), immutable(int));
-        auto res = Exp(immutable int(42), false);
-        assert(!res);
-        assert(!res.hasValue && res.hasError);
-        assert(res.error == 42);
-        assertThrown!Throwable(res.value());
-        assert(unexpected!(immutable(int))(immutable int(42)).error == 42);
-    }
-
-    // const mix
-    {
-        alias Exp = Expected!(const(int), int);
-        auto res = Exp(const int(42));
-        auto val = res.value;
-        static assert(is(typeof(val) == const int));
-        assert(res);
-        assert(res.hasValue && !res.hasError);
-        assert(res.value == 42);
-        assertThrown!Throwable(res.error);
-    }
-
-    // const mix
-    {
-        alias Exp = Expected!(const(int), int);
-        auto res = Exp(42);
-        auto err = res.error;
-        static assert(is(typeof(err) == int));
-        assert(!res);
-        assert(!res.hasValue && res.hasError);
-        assert(res.error == 42);
-        assertThrown!Throwable(res.value);
-    }
-
-    // immutable mix
-    {
-        alias Exp = Expected!(immutable(int), int);
-        auto res = Exp(immutable int(42));
-        auto val = res.value;
-        static assert(is(typeof(val) == immutable int));
-        assert(res);
-        assert(res.hasValue && !res.hasError);
-        assert(res.value == 42);
-        assertThrown!Throwable(res.error);
-    }
-
-    // immutable mix
-    {
-        alias Exp = Expected!(immutable(int), int);
-        auto res = Exp(42);
-        auto err = res.error;
-        static assert(is(typeof(err) == int));
-        assert(!res);
-        assert(!res.hasValue && res.hasError);
-        assert(res.error == 42);
-        assertThrown!Throwable(res.value);
-    }
-
-    // immutable mix reverse
-    {
-        alias Exp = Expected!(int, immutable(int));
-        auto res = Exp(immutable int(42));
-        auto err = res.error;
-        static assert(is(typeof(err) == immutable int));
-        assert(!res);
-        assert(!res.hasValue && res.hasError);
-        assert(res.error == 42);
-        assertThrown!Throwable(res.value);
-    }
-
-    // immutable mix reverse
-    {
-        alias Exp = Expected!(int, immutable(int));
-        auto res = Exp(42);
-        auto val = res.value;
-        static assert(is(typeof(val) == int));
-        assert(res);
-        assert(res.hasValue && !res.hasError);
-        assert(res.value == 42);
-        assertThrown!Throwable(res.error);
-    }
-}
-
-// void payload
-nothrow @nogc unittest
-{
-    alias Exp = Expected!(void, int);
-    static assert (!__traits(hasMember, Exp, "hasValue"));
-    static assert (!__traits(hasMember, Exp, "value"));
-
-    {
-        auto res = Exp();
-        assert(res);
-        assert(!res.hasError);
-    }
-
-    {
-        auto res = Exp(42);
-        assert(!res);
-        assert(res.hasError);
-        assert(res.error == 42);
-    }
-}
-
-// opEquals
-unittest
-{
-    assert(expected(42) == 42);
-    assert(expected(42) != 43);
-    assert(expected("foo") == "foo");
-    assert(expected("foo") != "bar");
-    assert(expected("foo") == cast(const string)"foo");
-    assert(expected("foo") == cast(immutable string)"foo");
-    assert(expected(42) == expected(42));
-    assert(expected(42) != expected(43));
-    assert(expected(42) != unexpected!int("42"));
-
-    static assert(!__traits(compiles, unexpected("foo") == "foo"));
-    assert(unexpected(42) == unexpected(42));
-    assert(unexpected(42) != unexpected(43));
-    assert(unexpected("foo") == unexpected("foo"));
-    assert(unexpected("foo") != unexpected("bar"));
-}
-
-//FIXME: doesn't work - some older dmd error
-static if (__VERSION__ >= 2082)
-{
-    // toHash
-    unittest
-    {
-        assert(expected(42).hashOf == 42.hashOf);
-        assert(expected(42).hashOf != 43.hashOf);
-        assert(expected(42).hashOf == expected(42).hashOf);
-        assert(expected(42).hashOf != expected(43).hashOf);
-        assert(expected(42).hashOf == expected!bool(42).hashOf);
-        assert(expected(42).hashOf != unexpected("foo").hashOf);
-        assert(unexpected("foo").hashOf == unexpected("foo").hashOf);
-    }
-}
-
-// range interface
-unittest
-{
-    {
-        auto r = expected(42);
-        assert(!r.empty);
-        assert(r.front == 42);
-        r.popFront();
-        assert(r.empty);
-    }
-
-    {
-        auto r = unexpected!int("foo");
-        assert(r.empty);
-    }
-
-    {
-        auto r = unexpected("foo");
-        static assert(!__traits(compiles, r.empty));
-        static assert(!__traits(compiles, r.front));
-        static assert(!__traits(compiles, r.popFront));
-    }
-}
-
-unittest
-{
-    {
-        struct Value { int val; }
-
-        assert(expected(Value(42)).hasValue);
-        assert(expected(const Value(42)).hasValue);
-        assert(expected(immutable Value(42)).hasValue);
-    }
-
-    {
-        struct DisabledValue { int val; @disable this(this); }
-
-        assert(expected(DisabledValue(42)).hasValue);
-        //FIXME?
-        //assert(expected(const DisabledValue(42)).hasValue);
-        // assert(expected(immutable DisabledValue(42)).hasValue);
-    }
-}
-
-// RC payload
-unittest
-{
-    struct Hook {
-        static immutable bool enableRefCountedPayload = true;
-        static immutable bool enableDefaultConstructor = true;
-        static void onUnchecked() pure nothrow @nogc { assert(0, "result unchecked"); }
-    }
-
-    static assert(isDefaultConstructorEnabled!Hook);
-
-    {
-        auto e = expected!(bool, Hook)(42);
-        e = 43;
-        assert(e.value == 43);
-    }
-
-    struct Value { int val; }
-
-    auto res = expected!(bool, Hook)(Value(42));
-    assert(res.hasValue);
-    assert(!res.empty);
-    assert(res.front.val == 42);
-    res.popFront(); assert(res.empty);
-
-    assert(expected!(bool, Hook)(true).hasValue);
-    assert(unexpected!(bool, Hook)(true).hasError);
-    assert(expected!(bool, Hook)(const Value(42)).hasValue);
-    assert(expected!(bool, Hook)(immutable Value(42)).hasValue);
-
-    // same types
-    assert(expected!(int, Hook)(42).value == 42);
-    assert(unexpected!(int, Hook)(42).error == 42);
-
-    // forced check
-    () @trusted {
-        assertThrown!Throwable({expected!(bool, Hook)(42);}());
-    }();
-
-    //FIXME?
-    //immutable r = expected!(bool, Hook)(immutable Value(42));
-    // immutable r = Expected!(immutable(Value), bool, Hook)(immutable Value(42));
-    // assert(r.value == 42);
-}
-
-// void hook
-unittest
-{
-    auto empty = Expected!(int, string, void).init;
-    assert(!empty.hasValue);
-    assert(!empty.hasError);
-    assert(empty.value == int.init);
-    assert(empty.error is null);
+    assert(ok(42).mapOrElse!(v => v/2, e => 0) == 21);
+    assert(ok().mapOrElse!(() => true, e => false));
+    assert(err!int("foo").mapOrElse!(v => v/2, e => 42) == 42);
+    assert(!err("foo").mapOrElse!(() => true, e => false));
 }
