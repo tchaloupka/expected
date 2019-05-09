@@ -992,7 +992,7 @@ template hasOnUnchecked(Hook)
 @system unittest
 {
     struct Foo {}
-    struct Bar { static void onUnchecked() { throw new Exception("result unchecked"); } }
+    struct Bar { static void onUnchecked() { } }
     struct Hook {
         static immutable bool enableCopyConstructor = false;
         static void onUnchecked() @safe { throw new Exception("result unchecked"); }
@@ -1149,6 +1149,7 @@ unittest
 
     assertThrown!(Unexpected!string)(expected!(string, Throw)(42).error);
     assertThrown!(Unexpected!string)(unexpected!(int, Throw)("foo").value);
+    assertThrown!(Unexpected!int)(unexpected!(bool, Throw)(-1).value);
 }
 
 /++ Hook implementation that behaves like a thrown exception.
@@ -2035,14 +2036,38 @@ unittest
 
     struct Value { int val; }
 
-    assert(expected!(bool, Hook)(Value(42)).hasValue);
+    auto res = expected!(bool, Hook)(Value(42));
+    assert(res.hasValue);
+    assert(!res.empty);
+    assert(res.front.val == 42);
+    res.popFront(); assert(res.empty);
+
     assert(expected!(bool, Hook)(true).hasValue);
     assert(unexpected!(bool, Hook)(true).hasError);
     assert(expected!(bool, Hook)(const Value(42)).hasValue);
     assert(expected!(bool, Hook)(immutable Value(42)).hasValue);
 
+    // same types
+    assert(expected!(int, Hook)(42).value == 42);
+    assert(unexpected!(int, Hook)(42).error == 42);
+
+    // forced check
+    () @trusted {
+        assertThrown!Throwable({expected!(bool, Hook)(42);}());
+    }();
+
     //FIXME?
     //immutable r = expected!(bool, Hook)(immutable Value(42));
     // immutable r = Expected!(immutable(Value), bool, Hook)(immutable Value(42));
     // assert(r.value == 42);
+}
+
+// void hook
+unittest
+{
+    auto empty = Expected!(int, string, void).init;
+    assert(!empty.hasValue);
+    assert(!empty.hasError);
+    assert(empty.value == int.init);
+    assert(empty.error is null);
 }
