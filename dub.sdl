@@ -12,3 +12,8 @@ configuration "unittest" {
 	importPaths "tests"
 	sourcePaths "tests"
 }
+
+configuration "basicunittest" {
+	importPaths "tests"
+	sourcePaths "tests"
+}

@@ -36,7 +36,7 @@ jobs:
   include:
     - stage: test
       script:
-        - dub test -b unittest-cov --compiler=${DC}
+        - dub test -b unittest-cov -c basicunittest --compiler=${DC}
     - stage: deploy
       script:
         - wget https://github.com/adamdruppe/adrdox/archive/master.zip
