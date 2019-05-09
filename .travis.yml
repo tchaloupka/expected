@@ -32,11 +32,14 @@ d:
   - ldc-1.6.0
   - dmd-beta
 
+script:
+  - dub test -c basicunittest --compiler=${DC}
+
 jobs:
   include:
     - stage: test
       script:
-        - dub test -b unittest-cov -c basicunittest --compiler=${DC}
+        - dub test -b unittest-cov --compiler=${DC}
     - stage: deploy
       script:
         - wget https://github.com/adamdruppe/adrdox/archive/master.zip
