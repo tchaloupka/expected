@@ -1490,20 +1490,21 @@ E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
         value = The value to return if there isn't an error
         pred = The predicate to call if the there isn't an error
 +/
-auto ref EX andThen(EX)(auto ref EX exp, auto ref EX value)
-    if (is(EX : Expected!(T, E, H), T, E, H))
+auto ref andThen(EX : Expected!(T, E, H), VEX : Expected!(VT, E, H), T, VT, E, H)(
+    auto ref EX exp, auto ref VEX value)
 {
-    return exp.hasError ? exp : value;
+    static if (is(T == VT)) return exp.hasError ? exp : value;
+    else return exp.hasError ? err!(VT, H)(exp.error) : value;
 }
 
 /// ditto
-auto ref EX andThen(alias pred, EX)(auto ref EX exp)
-    if (
-        is(EX : Expected!(T, E, H), T, E, H)
-        && is(typeof(pred()) : EX)
-    )
+auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H)(auto ref EX exp)
+    if (is(typeof(pred()) : Expected!(VT, E, H), VT))
 {
-    return exp.hasError ? exp : pred();
+    import std.traits : TemplateArgsOf;
+    alias VT = TemplateArgsOf!(typeof(pred()))[0];
+    static if (is(T == VT)) return exp.hasError ? exp : pred();
+    else return exp.hasError ? err!(VT, H)(exp.error) : pred();
 }
 
 ///
@@ -1523,6 +1524,12 @@ unittest
     assert(ok().andThen!(() => ok()));
     assert(ok().andThen!(() => err("foo")).error == "foo");
     assert(err("foo").andThen!(() => ok()).error == "foo");
+
+    // with different value type
+    assert(ok(42).andThen(ok("foo")) == "foo");
+    assert(err!int("bug").andThen(ok("foo")).error == "bug");
+    assert(ok(42).andThen!(() => err!bool("foo")).error == "foo");
+    assert(err!int("bug").andThen!(() => err!bool("foo")).error == "bug");
 }
 
 /++
@@ -1534,7 +1541,7 @@ unittest
         value = The value to return if there is an error
         pred = The predicate to call if the there is an error
 +/
-U orElse(EX, U)(auto ref EX exp, lazy U value)
+auto ref U orElse(EX, U)(auto ref EX exp, lazy U value)
     if (is(EX : Expected!(T, E, H), T, E, H) && is(U : T))
 {
     return exp.orElse!value;
