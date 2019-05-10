@@ -1498,13 +1498,13 @@ auto ref andThen(EX : Expected!(T, E, H), VEX : Expected!(VT, E, H), T, VT, E, H
 }
 
 /// ditto
-auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H)(auto ref EX exp)
-    if (is(typeof(pred()) : Expected!(VT, E, H), VT))
+auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref EX exp, Args args)
+    if (is(typeof(pred(args)) : Expected!(VT, E, H), VT))
 {
     import std.traits : TemplateArgsOf;
-    alias VT = TemplateArgsOf!(typeof(pred()))[0];
-    static if (is(T == VT)) return exp.hasError ? exp : pred();
-    else return exp.hasError ? err!(VT, H)(exp.error) : pred();
+    alias VT = TemplateArgsOf!(typeof(pred(args)))[0];
+    static if (is(T == VT)) return exp.hasError ? exp : pred(args);
+    else return exp.hasError ? err!(VT, H)(exp.error) : pred(args);
 }
 
 ///
@@ -1530,6 +1530,9 @@ unittest
     assert(err!int("bug").andThen(ok("foo")).error == "bug");
     assert(ok(42).andThen!(() => err!bool("foo")).error == "foo");
     assert(err!int("bug").andThen!(() => err!bool("foo")).error == "bug");
+
+    // with args
+    assert(ok(42).andThen!((v) => err!bool(v))("foo").error == "foo");
 }
 
 /++
@@ -1548,20 +1551,14 @@ auto ref U orElse(EX, U)(auto ref EX exp, lazy U value)
 }
 
 /// ditto
-auto ref orElse(alias pred, EX)(auto ref EX exp)
-    if (is(EX : Expected!(T, E, H), T, E, H) && is(typeof(pred()) : T))
+auto ref orElse(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(
+    auto ref EX exp, Args args)
 {
-    return exp.hasError ? pred() : exp.value;
-}
-
-/// ditto
-auto ref orElse(alias pred, EX)(auto ref EX exp)
-    if (
-        is(EX : Expected!(T, E, H), T, E, H)
-        && is(typeof(pred()) : Expected!(T, E, H))
-    )
-{
-    return exp.hasError ? pred() : exp;
+    static if (is(typeof(pred(args)) : T))
+        return exp.hasError ? pred(args) : exp.value;
+    else static if (is(typeof(pred(args)) : EX))
+        return exp.hasError ? pred() : exp;
+    else static assert(0, "Expecting predicate of same value type as source Expected or predicate of same Expected type");
 }
 
 ///
@@ -1580,6 +1577,9 @@ unittest
     assert(ok().orElse!(() => err("foo")));
     assert(err("foo").orElse!(() => ok()));
     assert(err("foo").orElse!(() => err("bar")).error == "bar");
+
+    // with args
+    assert(err!int("foo").orElse!((v) => v)(42) == 42);
 }
 
 /++
