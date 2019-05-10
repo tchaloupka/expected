@@ -1499,18 +1499,31 @@ auto ref andThen(EX : Expected!(T, E, H), VEX : Expected!(VT, E, H), T, VT, E, H
 
 /// ditto
 auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref EX exp, Args args)
-    if (is(typeof(pred(args)) : Expected!(VT, E, H), VT))
 {
     import std.traits : TemplateArgsOf;
-    alias VT = TemplateArgsOf!(typeof(pred(args)))[0];
-    static if (is(T == VT)) return exp.hasError ? exp : pred(args);
-    else return exp.hasError ? err!(VT, H)(exp.error) : pred(args);
+
+    static if (!is(T == void) && is(typeof(pred(T.init, args)) : Expected!(VT, E, H), VT))
+    {
+        static if (is(T == VT)) return exp.hasError ? exp : pred(exp.value, args);
+        else return exp.hasError ? err!(VT, H)(exp.error) : pred(exp.value, args);
+    }
+    else static if (is(typeof(pred(args)) : Expected!(VT, E, H), VT))
+    {
+        static if (is(T == VT)) return exp.hasError ? exp : pred(args);
+        else return exp.hasError ? err!(VT, H)(exp.error) : pred(args);
+    }
+    else
+    {
+        static assert(0, "Expected predicate of Expected type with optional args receiving previous value");
+    }
 }
 
 ///
 @("andThen")
 unittest
 {
+    import std.format : format;
+
     assert(ok(42).andThen(ok(1)) == 1);
     assert(ok(42).andThen!(() => ok(0)) == 0);
     assert(ok(42).andThen(err!int("foo")).error == "foo");
@@ -1532,7 +1545,9 @@ unittest
     assert(err!int("bug").andThen!(() => err!bool("foo")).error == "bug");
 
     // with args
-    assert(ok(42).andThen!((v) => err!bool(v))("foo").error == "foo");
+    assert(ok(42).andThen!((v) => err!bool(v))("foo").error == "foo"); // doesn't use previous value
+    assert(ok(42).andThen!((i, v) => err!bool(format!"%s: %s"(v, i)))("foo").error == "foo: 42"); // pass previous value to predicate
+    assert(ok().andThen!((v) => ok(v))(42) == 42); // void type on first ok
 }
 
 /++
