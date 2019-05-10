@@ -37,10 +37,11 @@ script:
 
 jobs:
   include:
-    - stage: test
+    - stage: codecov
       script:
         - dub test -b unittest-cov --compiler=${DC}
-    - stage: deploy
+        - bash <(curl -s https://codecov.io/bash)
+    - stage: docs
       script:
         - wget https://github.com/adamdruppe/adrdox/archive/master.zip
         - unzip master.zip
@@ -55,9 +56,6 @@ jobs:
         local_dir: generated-docs
         on:
           branch: master
-
-after_success:
-  - bash <(curl -s https://codecov.io/bash)
 
 env:
   global:
