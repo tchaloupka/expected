@@ -46,7 +46,7 @@ path/to/adrdox/doc2 --genSearchIndex --genSource -o generated-docs source
 ```D
 auto foo(int i) {
     if (i == 0) return err!int("oops");
-   return ok(42 / i);
+    return ok(42 / i);
 }
 
 auto bar(int i) {
@@ -66,13 +66,13 @@ assert(foo(0).hasError);
 assert(foo(0).error == "oops");
 
 // void result
-assert(Expected!(void)()); // no error -> success
-assert(!Expected!(void)().hasError);
-// assert(err("foo").value); // doesn't have hasValue and value properties
+assert(ok()); // no error -> success
+assert(!ok().hasError);
+// assert(err("foo").hasValue); // doesn't have hasValue and value properties
 
 // expected from throwing function
-assert(ok!bar(1) == 0);
-assert(ok!bar(0).error.msg == "err");
+assert(consume!bar(1) == 0);
+assert(consume!bar(0).error.msg == "err");
 
 // orElse
 assert(foo(2).orElse!(() => 0) == 21);
