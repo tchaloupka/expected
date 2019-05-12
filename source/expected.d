@@ -1485,6 +1485,9 @@ E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
     Returns the error contained within the $(LREF Expected) _and then_ another value if there's no error.
     This function can be used for control flow based on $(LREF Expected) values.
 
+    Predicate can accept no arguments, variable arguments, or previous result value with additional variable arguments.
+    It must return $(LREF Expected) wth the same error type. But can provide different value type.
+
     Params:
         exp = The $(LREF Expected) to call andThen on
         value = The value to return if there isn't an error
@@ -1500,8 +1503,6 @@ auto ref andThen(EX : Expected!(T, E, H), VEX : Expected!(VT, E, H), T, VT, E, H
 /// ditto
 auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref EX exp, Args args)
 {
-    import std.traits : TemplateArgsOf;
-
     static if (!is(T == void) && is(typeof(pred(T.init, args)) : Expected!(VT, E, H), VT))
     {
         static if (is(T == VT)) return exp.hasError ? exp : pred(exp.value, args);
@@ -1554,6 +1555,9 @@ unittest
     Returns the value contained within the $(LREF Expected) _or else_ another value if there's an error.
     This function can be used for control flow based on $(LREF Expected) values.
 
+    Predicate can accept no arguments, variable arguments, or previous result error value with additional variable arguments.
+    It must return $(LREF Expected) wth the same value type. But can provide different error value type.
+
     Params:
         exp = The $(LREF Expected) to call orElse on
         value = The value to return if there is an error
@@ -1571,9 +1575,19 @@ auto ref orElse(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(
 {
     static if (is(typeof(pred(args)) : T))
         return exp.hasError ? pred(args) : exp.value;
-    else static if (is(typeof(pred(args)) : EX))
-        return exp.hasError ? pred() : exp;
-    else static assert(0, "Expecting predicate of same value type as source Expected or predicate of same Expected type");
+    else static if (is(typeof(pred(exp.error, args)) : T))
+        return exp.hasError ? pred(exp.error, args) : exp.value;
+    else static if (is(typeof(pred(args)) : Expected!(T, VE, H), VE))
+    {
+        static if (is(E == VE)) return exp.hasError ? pred(args) : exp;
+        else return exp.hasError ? pred(args) : ok!VE(exp.value);
+    }
+    else static if (is(typeof(pred(exp.error, args)) : Expected!(T, VE, H), VE))
+    {
+        static if (is(E == VE)) return exp.hasError ? pred(exp.error, args) : exp;
+        else return exp.hasError ? pred(exp.error, args) : ok!VE(exp.value);
+    }
+    else static assert(0, "Expecting predicate of same value type");
 }
 
 ///
@@ -1595,6 +1609,11 @@ unittest
 
     // with args
     assert(err!int("foo").orElse!((v) => v)(42) == 42);
+
+    // with different error type
+    assert(err!int("foo").orElse!((v) => ok!int(v))(42).value == 42); // string -> int
+    assert(err!int("foo").orElse!((v) => err!int(v))(42).error == 42);
+    assert(err!int("foo").orElse!((e, v) => err!int(e.length + v))(42).error == 45); // with previous error
 }
 
 /++
