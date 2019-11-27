@@ -1449,8 +1449,9 @@ unittest
     If there is none, or error value, it throws $(D assert(0)) with the provided message.
 
     Params:
-        res = $(LREF Expected) to check the result of
-        msg = message to use with assert
+        res     = $(LREF Expected) to check the result of
+        msg     = message to use with assert
+        handler = custom handler to be called on error
 +/
 T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
@@ -1465,6 +1466,21 @@ T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
         import std.format : format;
         if (res.hasError) assert(0, format!"%s: %s"(msg, res.error));
         else assert(0, format!"%s: empty"(msg));
+    }
+}
+
+/// ditto
+T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
+{
+    static if (!is(T == void)) { if (res.hasValue) return res.value; }
+    else  { if (!res.hasError) return; }
+
+    static if (!is(typeof(handler(res.error)) == void))
+        return handler(res.error);
+    else
+    {
+        handler(res.error);
+        return T.init;
     }
 }
 
@@ -1487,6 +1503,7 @@ version (D_Exceptions)
     Params:
         res = $(LREF Expected) to check the result of
         msg = message to use with assert
+        handler = custom handler to be called on value
 +/
 E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
@@ -1506,17 +1523,43 @@ E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
     }
 }
 
-version (D_Exceptions)
+/// ditto
+E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 {
-    ///
-    @("expectErr")
-    @system unittest
+    if (res.hasError) return res.error;
+
+    static if (!is(typeof(handler(T.init)) == void))
     {
-        assert(err("foo").expectErr("oops") == "foo");
+        static if (!is(T == void)) return handler(res.hasValue ? res.value : T.init);
+        else return handler();
+    }
+    else
+    {
+        static if (!is(T == void)) handler(res.hasValue ? res.value : T.init);
+        else handler();
+        return T.init;
+    }
+}
+
+///
+@("expectErr")
+@system unittest
+{
+    assert(err("foo").expectErr("oops") == "foo");
+    version (D_Exceptions)
+    {
         assert(collectExceptionMsg!Throwable(Expected!int.init.expectErr("oops")) == "oops: empty");
         assert(collectExceptionMsg!Throwable(ok(42).expectErr("oops")) == "oops: 42");
         assert(collectExceptionMsg!Throwable(ok().expectErr("oops")) == "oops: empty"); // void value
     }
+
+    assert(ok("foo").expect!(a => "bar") == "foo");
+    assert(err!string("foo").expect!(a => "bar") == "bar");
+    assert(err!string("foo").expect!((a) {}) is null);
+
+    assert(ok("foo").expectErr!(a => "bar") == "bar");
+    assert(err!string("foo").expectErr!(a => "bar") == "foo");
+    assert(ok!string("foo").expectErr!((a) {}) is null);
 }
 
 /++
