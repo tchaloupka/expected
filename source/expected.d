@@ -143,9 +143,12 @@ module expected;
         return ok(42 / i);
     }
 
-    auto bar(int i) {
-        if (i == 0) throw new Exception("err");
-        return i-1;
+    version (D_Exceptions)
+    {
+        auto bar(int i) {
+            if (i == 0) throw new Exception("err");
+            return i-1;
+        }
     }
 
     // basic checks
@@ -164,9 +167,12 @@ module expected;
     assert(!ok().hasError);
     // assert(err("foo").hasValue); // doesn't have hasValue and value properties
 
-    // expected from throwing function
-    assert(consume!bar(1) == 0);
-    assert(consume!bar(0).error.msg == "err");
+    version (D_Exceptions)
+    {
+        // expected from throwing function
+        assert(consume!bar(1) == 0);
+        assert(consume!bar(0).error.msg == "err");
+    }
 
     // orElse
     assert(foo(2).orElse!(() => 0) == 21);
@@ -189,28 +195,31 @@ module expected;
     assert(foo(0).mapOrElse!(v => v*2, e => 0) == 0);
 }
 
-/// $(H3 Advanced usage - behavior modification)
-@("Advanced usage example")
-unittest
+version (D_Exceptions)
 {
-    import exp = expected;
-
-    // define our Expected type using Exception as Error values
-    // and Throw hook, which throws when empty value or error is accessed
-    template Expected(T)
+    /// $(H3 Advanced usage - behavior modification)
+    @("Advanced usage example")
+    unittest
     {
-        alias Expected = exp.Expected!(T, Exception, Throw);
+        import exp = expected;
+
+        // define our Expected type using Exception as Error values
+        // and Throw hook, which throws when empty value or error is accessed
+        template Expected(T)
+        {
+            alias Expected = exp.Expected!(T, Exception, Throw);
+        }
+
+        // create wrappers for simplified usage of our Expected
+        auto ok(T)(T val) { return exp.ok!(Exception, Throw)(val); }
+        auto err(T)(Exception err) { return exp.err!(T, Throw)(err); }
+
+        // use it as normal
+        assert(ok(42) == 42);
+        assert(err!int(new Exception("foo")).orElse(0) == 0);
+        assertThrown(ok(42).error);
+        assertThrown(err!int(new Exception("bar")).value);
     }
-
-    // create wrappers for simplified usage of our Expected
-    auto ok(T)(T val) { return exp.ok!(Exception, Throw)(val); }
-    auto err(T)(Exception err) { return exp.err!(T, Throw)(err); }
-
-    // use it as normal
-    assert(ok(42) == 42);
-    assert(err!int(new Exception("foo")).orElse(0) == 0);
-    assertThrown(ok(42).error);
-    assertThrown(err!int(new Exception("bar")).value);
 }
 
 version (unittest) {
@@ -995,31 +1004,34 @@ template hasOnUnchecked(Hook)
     else enum hasOnUnchecked = false;
 }
 
-///
-@("hasOnUnchecked")
-@system unittest
+version (D_Exceptions)
 {
-    struct Foo {}
-    struct Bar { static void onUnchecked() { } }
-    struct Hook {
-        static immutable bool enableCopyConstructor = false;
-        static void onUnchecked() @safe { throw new Exception("result unchecked"); }
+    ///
+    @("hasOnUnchecked")
+    @system unittest
+    {
+        struct Foo {}
+        struct Bar { static void onUnchecked() { } }
+        struct Hook {
+            static immutable bool enableCopyConstructor = false;
+            static void onUnchecked() @safe { throw new Exception("result unchecked"); }
+        }
+
+        // template checks
+        static assert(!hasOnUnchecked!Foo);
+        static assert(!__traits(compiles, hasOnUnchecked!Bar)); // missing disabled constructor
+        static assert(hasOnUnchecked!Hook);
+
+        // copy constructor
+        auto exp = ok!(string, Hook)(42);
+        auto exp2 = err!(int, Hook)("foo");
+        static assert(!__traits(compiles, exp.andThen(ok!(string, Hook)(42)))); // disabled cc
+        assert(exp.andThen(exp2).error == "foo"); // passed by ref so no this(this) called
+
+        // check for checked result
+        assertThrown({ ok!(string, Hook)(42); }());
+        assertThrown({ err!(void, Hook)("foo"); }());
     }
-
-    // template checks
-    static assert(!hasOnUnchecked!Foo);
-    static assert(!__traits(compiles, hasOnUnchecked!Bar)); // missing disabled constructor
-    static assert(hasOnUnchecked!Hook);
-
-    // copy constructor
-    auto exp = ok!(string, Hook)(42);
-    auto exp2 = err!(int, Hook)("foo");
-    static assert(!__traits(compiles, exp.andThen(ok!(string, Hook)(42)))); // disabled cc
-    assert(exp.andThen(exp2).error == "foo"); // passed by ref so no this(this) called
-
-    // check for checked result
-    assertThrown({ ok!(string, Hook)(42); }());
-    assertThrown({ err!(void, Hook)("foo"); }());
 }
 
 /++ Template to determine if hook provides function called when value is set.
@@ -1115,95 +1127,101 @@ static:
     static assert(hasOnAccessEmptyValue!(Abort, int));
     static assert(hasOnAccessEmptyError!Abort);
 
-    assertThrown!Throwable(ok(42).error);
-    assertThrown!Throwable(err!int("foo").value);
-}
-
-/++ Hook implementation that throws exceptions instead of default assert behavior.
-+/
-struct Throw
-{
-static:
-
-    /++ Default constructor for $(LREF Expected) is disabled.
-        Same with the `opAssign`, so $(LREF Expected) can be only constructed
-        once and not modified afterwards.
-    +/
-    immutable bool enableDefaultConstructor = false;
-
-    /++ Handler for case when empty value is accessed.
-
-        Throws:
-            If `E` inherits from `Throwable`, the error value is thrown.
-            Otherwise, an [Unexpected] instance containing the error value is
-            thrown.
-    +/
-    void onAccessEmptyValue(E)(E err)
+    version (D_Exceptions)
     {
-        import std.traits : Unqual;
-        static if(is(Unqual!E : Throwable)) throw err;
-        else throw new Unexpected!E(err);
-    }
-
-    /// Handler for case when empty error is accessed.
-    void onAccessEmptyError()
-    {
-        throw new Unexpected!string("Can't access error on expected value");
+        assertThrown!Throwable(ok(42).error);
+        assertThrown!Throwable(err!int("foo").value);
     }
 }
 
-///
-@("Throw")
-unittest
+version (D_Exceptions)
 {
-    static assert(!isDefaultConstructorEnabled!Throw);
-    static assert(hasOnAccessEmptyValue!(Throw, string));
-    static assert(hasOnAccessEmptyValue!(Throw, int));
-    static assert(hasOnAccessEmptyError!Throw);
-
-    assertThrown!(Unexpected!string)(ok!(string, Throw)(42).error);
-    assertThrown!(Unexpected!string)(err!(int, Throw)("foo").value);
-    assertThrown!(Unexpected!int)(err!(bool, Throw)(-1).value);
-}
-
-/++ Hook implementation that behaves like a thrown exception.
-    It throws $(D Exception) right when the $(LREF Expected) with error is initialized.
-
-    With this, one can easily change the code behavior between `Expected` idiom or plain `Exception`s.
-+/
-struct AsException
-{
-static:
-
-    /++ Default constructor for $(LREF Expected) is disabled.
-        Same with the `opAssign`, so $(LREF Expected) can be only constructed
-        once and not modified afterwards.
+    /++ Hook implementation that throws exceptions instead of default assert behavior.
     +/
-    immutable bool enableDefaultConstructor = false;
-
-    /++ Handler for case when empty error is accessed.
-    +/
-    void onErrorSet(E)(auto ref E err)
+    struct Throw
     {
-        static if (is(E : Throwable)) throw E;
-        else throw new Unexpected!E(err);
+    static:
+
+        /++ Default constructor for $(LREF Expected) is disabled.
+            Same with the `opAssign`, so $(LREF Expected) can be only constructed
+            once and not modified afterwards.
+        +/
+        immutable bool enableDefaultConstructor = false;
+
+        /++ Handler for case when empty value is accessed.
+
+            Throws:
+                If `E` inherits from `Throwable`, the error value is thrown.
+                Otherwise, an [Unexpected] instance containing the error value is
+                thrown.
+        +/
+        void onAccessEmptyValue(E)(E err)
+        {
+            import std.traits : Unqual;
+            static if(is(Unqual!E : Throwable)) throw err;
+            else throw new Unexpected!E(err);
+        }
+
+        /// Handler for case when empty error is accessed.
+        void onAccessEmptyError()
+        {
+            throw new Unexpected!string("Can't access error on expected value");
+        }
     }
-}
 
-///
-@("AsException")
-unittest
-{
-    static assert(!isDefaultConstructorEnabled!AsException);
-    static assert(hasOnErrorSet!(AsException, string));
+    ///
+    @("Throw")
+    unittest
+    {
+        static assert(!isDefaultConstructorEnabled!Throw);
+        static assert(hasOnAccessEmptyValue!(Throw, string));
+        static assert(hasOnAccessEmptyValue!(Throw, int));
+        static assert(hasOnAccessEmptyError!Throw);
 
-    auto div(int a, int b) {
-        if (b != 0) return ok!(string, AsException)(a / b);
-        return err!(int, AsException)("oops");
+        assertThrown!(Unexpected!string)(ok!(string, Throw)(42).error);
+        assertThrown!(Unexpected!string)(err!(int, Throw)("foo").value);
+        assertThrown!(Unexpected!int)(err!(bool, Throw)(-1).value);
     }
 
-    assert(div(10, 2) == 5);
-    assert(collectExceptionMsg!(Unexpected!string)(div(1, 0)) == "oops");
+    /++ Hook implementation that behaves like a thrown exception.
+        It throws $(D Exception) right when the $(LREF Expected) with error is initialized.
+
+        With this, one can easily change the code behavior between `Expected` idiom or plain `Exception`s.
+    +/
+    struct AsException
+    {
+    static:
+
+        /++ Default constructor for $(LREF Expected) is disabled.
+            Same with the `opAssign`, so $(LREF Expected) can be only constructed
+            once and not modified afterwards.
+        +/
+        immutable bool enableDefaultConstructor = false;
+
+        /++ Handler for case when empty error is accessed.
+        +/
+        void onErrorSet(E)(auto ref E err)
+        {
+            static if (is(E : Throwable)) throw E;
+            else throw new Unexpected!E(err);
+        }
+    }
+
+    ///
+    @("AsException")
+    unittest
+    {
+        static assert(!isDefaultConstructorEnabled!AsException);
+        static assert(hasOnErrorSet!(AsException, string));
+
+        auto div(int a, int b) {
+            if (b != 0) return ok!(string, AsException)(a / b);
+            return err!(int, AsException)("oops");
+        }
+
+        assert(div(10, 2) == 5);
+        assert(collectExceptionMsg!(Unexpected!string)(div(1, 0)) == "oops");
+    }
 }
 
 /++ Hook implementation that behaves same as $(LREF Abort) hook, but uses refcounted payload
@@ -1250,7 +1268,7 @@ static:
     }
 
     // unchecked - throws assert
-    assertThrown!Throwable({ ok!(string, RCAbort)(42); }());
+    version (D_Exceptions) assertThrown!Throwable({ ok!(string, RCAbort)(42); }());
 
     {
         auto res = ok!(string, RCAbort)(42);
@@ -1267,32 +1285,38 @@ static:
     // chaining
     assert(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)) == 42);
     assert(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")).error == "foo");
-    assertThrown!Throwable(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
-    assertThrown!Throwable(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
+    version (D_Exceptions)
+    {
+        assertThrown!Throwable(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
+        assertThrown!Throwable(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
+    }
 }
 
-/++ An exception that represents an error value.
-
-    This is used by $(LREF Throw) hook when undefined value or error is
-    accessed on $(LREF Expected)
-+/
-class Unexpected(T) : Exception
+version (D_Exceptions)
 {
-    // remove possible inout qualifier
-    static if (is(T U == inout U)) alias ET = U;
-    else alias ET = T;
+    /++ An exception that represents an error value.
 
-    ET error; /// error value
-
-    /// Constructs an `Unexpected` exception from an error value.
-    pure @safe @nogc nothrow
-    this()(auto ref T value, string file = __FILE__, size_t line = __LINE__)
+        This is used by $(LREF Throw) hook when undefined value or error is
+        accessed on $(LREF Expected)
+    +/
+    class Unexpected(T) : Exception
     {
-        import std.traits : isAssignable;
-        static if (isAssignable!(string, T)) super(value, file, line);
-        else super("Unexpected error", file, line);
+        // remove possible inout qualifier
+        static if (is(T U == inout U)) alias ET = U;
+        else alias ET = T;
 
-        this.error = error;
+        ET error; /// error value
+
+        /// Constructs an `Unexpected` exception from an error value.
+        pure @safe @nogc nothrow
+        this()(auto ref T value, string file = __FILE__, size_t line = __LINE__)
+        {
+            import std.traits : isAssignable;
+            static if (isAssignable!(string, T)) super(value, file, line);
+            else super("Unexpected error", file, line);
+
+            this.error = error;
+        }
     }
 }
 
@@ -1369,14 +1393,17 @@ template consume(alias fun, Hook = Abort)
     }
 }
 
-///
-@("consume from function call")
-unittest
+version (D_Exceptions)
 {
-    auto fn(int v) { if (v == 42) throw new Exception("don't panic"); return v; }
+    ///
+    @("consume from function call")
+    unittest
+    {
+        auto fn(int v) { if (v == 42) throw new Exception("don't panic"); return v; }
 
-    assert(consume!fn(1) == 1);
-    assert(consume!fn(42).error.msg == "don't panic");
+        assert(consume!fn(1) == 1);
+        assert(consume!fn(42).error.msg == "don't panic");
+    }
 }
 
 /++
@@ -1427,25 +1454,31 @@ unittest
 +/
 T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
-    import std.format : format;
-
     //TODO: hook for customization
 
     static if (!is(T == void)) { if (res.hasValue) return res.value; }
     else  { if (!res.hasError) return; }
 
-    if (res.hasError) assert(0, format!"%s: %s"(msg, res.error));
-    else assert(0, format!"%s: empty"(msg));
+    version (D_BetterC) assert(0, msg);
+    else
+    {
+        import std.format : format;
+        if (res.hasError) assert(0, format!"%s: %s"(msg, res.error));
+        else assert(0, format!"%s: empty"(msg));
+    }
 }
 
-///
-@("expect")
-@system unittest
+version (D_Exceptions)
 {
-    assert(ok(42).expect("oops") == 42);
-    ok().expect("oops"); // void value
-    assert(collectExceptionMsg!Throwable(Expected!int.init.expect("oops")) == "oops: empty");
-    assert(collectExceptionMsg!Throwable(err!int("foo").expect("oops")) == "oops: foo");
+    ///
+    @("expect")
+    @system unittest
+    {
+        assert(ok(42).expect("oops") == 42);
+        ok().expect("oops"); // void value
+        assert(collectExceptionMsg!Throwable(Expected!int.init.expect("oops")) == "oops: empty");
+        assert(collectExceptionMsg!Throwable(err!int("foo").expect("oops")) == "oops: foo");
+    }
 }
 
 /++ Unwraps a result, yielding the content of an error value.
@@ -1457,28 +1490,33 @@ T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 +/
 E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
-    import std.format : format;
-
     //TODO: hook for customization
 
     if (res.hasError) return res.error;
 
-    static if (!is(T == void))
+    version (D_BetterC) assert(0, msg);
+    else
     {
-        if (res.hasValue) assert(0, format!"%s: %s"(msg, res.value));
-        else assert(0, format!"%s: empty"(msg));
+        import std.format : format;
+        static if (!is(T == void))
+        {
+            if (res.hasValue) assert(0, format!"%s: %s"(msg, res.value));
+        }
+        assert(0, format!"%s: empty"(msg));
     }
-    else assert(0, format!"%s: empty"(msg));
 }
 
-///
-@("expectErr")
-@system unittest
+version (D_Exceptions)
 {
-    assert(err("foo").expectErr("oops") == "foo");
-    assert(collectExceptionMsg!Throwable(Expected!int.init.expectErr("oops")) == "oops: empty");
-    assert(collectExceptionMsg!Throwable(ok(42).expectErr("oops")) == "oops: 42");
-    assert(collectExceptionMsg!Throwable(ok().expectErr("oops")) == "oops: empty"); // void value
+    ///
+    @("expectErr")
+    @system unittest
+    {
+        assert(err("foo").expectErr("oops") == "foo");
+        assert(collectExceptionMsg!Throwable(Expected!int.init.expectErr("oops")) == "oops: empty");
+        assert(collectExceptionMsg!Throwable(ok(42).expectErr("oops")) == "oops: 42");
+        assert(collectExceptionMsg!Throwable(ok().expectErr("oops")) == "oops: empty"); // void value
+    }
 }
 
 /++
@@ -1547,7 +1585,15 @@ unittest
 
     // with args
     assert(ok(42).andThen!((v) => err!bool(v))("foo").error == "foo"); // doesn't use previous value
-    assert(ok(42).andThen!((i, v) => err!bool(format!"%s: %s"(v, i)))("foo").error == "foo: 42"); // pass previous value to predicate
+    version (D_BetterC)
+        assert(ok(42).andThen!((i, v)
+            {
+                assert(i == 42);
+                assert(v == "foo");
+                return err!bool("betterc");
+            })("foo").error == "betterc"); // pass previous value to predicate
+    else
+        assert(ok(42).andThen!((i, v) => err!bool(format!"%s: %s"(v, i)))("foo").error == "foo: 42"); // pass previous value to predicate
     assert(ok().andThen!((v) => ok(v))(42) == 42); // void type on first ok
 }
 
@@ -1713,7 +1759,7 @@ unittest
     {
         assert(ok(42).mapError!(e => e).value == 42);
         assert(err("foo").mapError!(e => 42).error == 42);
-        assert(err("foo").mapError!(e => new Exception(e)).error.msg == "foo");
+        version (D_Exceptions) assert(err("foo").mapError!(e => new Exception(e)).error.msg == "foo");
     }
 
     // remap hook

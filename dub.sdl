@@ -7,6 +7,10 @@ license "BSL-1.0"
 configuration "default" {
 }
 
+configuration "betterC" {
+	buildOptions "betterC"
+}
+
 configuration "unittest" {
 	dependency "silly" version="~>0.8.2"
 	importPaths "tests"
@@ -16,4 +20,11 @@ configuration "unittest" {
 configuration "basicunittest" {
 	importPaths "tests"
 	sourcePaths "tests"
+}
+
+// Needs to be run with: `dub test -c bettercunittest --main-file=tests/expected.d`
+configuration "bettercunittest" {
+	importPaths "tests"
+	sourcePaths "tests"
+	buildOptions "betterC"
 }
