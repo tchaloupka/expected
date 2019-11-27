@@ -107,25 +107,16 @@ Alternatively, since it's a single file self-contained implementation, you can s
 
 Build is tested against:
 
-* dmd-2.086.0
+* dmd-2.089.0
+* dmd-2.088.1
+* dmd-2.087.1
+* dmd-2.086.1
 * dmd-2.085.1
-* dmd-2.084.1
-* dmd-2.083.1
-* dmd-2.082.1
-* dmd-2.081.2
-* dmd-2.080.1
-* dmd-2.079.1
-* dmd-2.078.3
-* dmd-2.077.1
-* dmd-2.076.1
+* ldc-1.18.0
+* ldc-1.17.0
+* ldc-1.16.0
 * ldc-1.15.0
 * ldc-1.14.0
-* ldc-1.13.0
-* ldc-1.12.0
-* ldc-1.11.0
-* ldc-1.10.0
-* ldc-1.9.0
-* ldc-1.8.0
 * ldc-1.7.0
-* ldc-1.6.0
+* dmd-2.078.3
 * dmd-beta
