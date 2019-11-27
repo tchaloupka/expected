@@ -12,7 +12,7 @@ configuration "betterC" {
 }
 
 configuration "unittest" {
-	dependency "silly" version="~>0.8.2"
+	dependency "silly" version="~>1.0.0"
 	importPaths "tests"
 	sourcePaths "tests"
 }
