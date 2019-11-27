@@ -117,6 +117,4 @@ Build is tested against:
 * ldc-1.16.0
 * ldc-1.15.0
 * ldc-1.14.0
-* ldc-1.7.0
-* dmd-2.078.3
 * dmd-beta
