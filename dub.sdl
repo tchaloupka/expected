@@ -1,5 +1,5 @@
 name "expected"
-description "Implementation of expected idiom for D"
+description "Implementation of expected idiom (error handling with ok and err)"
 authors "Tomáš Chaloupka"
 copyright "Copyright © 2019, Tomáš Chaloupka"
 license "BSL-1.0"
