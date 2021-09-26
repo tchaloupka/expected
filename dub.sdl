@@ -12,18 +12,13 @@ configuration "betterC" {
 }
 
 configuration "unittest" {
-	dependency "silly" version="~>1.0.0"
+	dependency "silly" version=">=1.1.0"
 	importPaths "tests"
 	sourcePaths "tests"
 }
 
-configuration "basicunittest" {
-	importPaths "tests"
-	sourcePaths "tests"
-}
-
-// Needs to be run with: `dub test -c bettercunittest --main-file=tests/expected.d`
-configuration "bettercunittest" {
+configuration "expected-test-betterC" {
+	targetType "executable"
 	importPaths "tests"
 	sourcePaths "tests"
 	buildOptions "betterC"

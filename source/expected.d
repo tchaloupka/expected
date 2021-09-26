@@ -199,7 +199,7 @@ version (D_Exceptions)
 {
     /// $(H3 Advanced usage - behavior modification)
     @("Advanced usage example")
-    unittest
+    @safe unittest
     {
         import exp = expected;
 
@@ -248,7 +248,7 @@ version (unittest) {
 struct Expected(T, E = string, Hook = Abort)
     if (!is(E == void) && (isVoidValueEnabled!Hook || !is(T == void)))
 {
-    import std.algorithm : move;
+    import core.lifetime : move;
     import std.meta : AliasSeq, Filter, NoDuplicates;
     import std.traits: isAssignable, isCopyable, hasIndirections, Unqual;
 
@@ -830,7 +830,7 @@ template isCopyConstructorEnabled(Hook)
 
 ///
 @("isCopyConstructorEnabled")
-unittest
+@safe unittest
 {
     struct Foo {}
     struct Bar { static immutable bool enableCopyConstructor = false; }
@@ -866,7 +866,7 @@ template isRefCountedPayloadEnabled(Hook)
 
 ///
 @("isRefCountedPayloadEnabled")
-unittest
+@safe unittest
 {
     struct Foo {}
     struct Bar {
@@ -901,7 +901,7 @@ template isDefaultConstructorEnabled(Hook)
 
 ///
 @("isDefaultConstructorEnabled")
-unittest
+@safe unittest
 {
     struct Foo {}
     struct Bar { static immutable bool enableDefaultConstructor = true; }
@@ -925,7 +925,7 @@ template isVoidValueEnabled(Hook)
 
 ///
 @("isVoidValueEnabled")
-unittest
+@safe unittest
 {
     struct Hook { static immutable bool enableVoidValue = false; }
     assert(!ok().hasError); // void values are enabled by default
@@ -948,7 +948,7 @@ template hasOnAccessEmptyValue(Hook, E)
 
 ///
 @("hasOnAccessEmptyValue")
-unittest
+@safe unittest
 {
     struct Foo {}
     struct Bar { static void onAccessEmptyValue(E)(E err) {} }
@@ -973,7 +973,7 @@ template hasOnAccessEmptyError(Hook)
 
 ///
 @("hasOnAccessEmptyError")
-unittest
+@safe unittest
 {
     struct Foo {}
     struct Bar { static void onAccessEmptyError() {} }
@@ -1008,7 +1008,7 @@ version (D_Exceptions)
 {
     ///
     @("hasOnUnchecked")
-    @system unittest
+    @safe unittest
     {
         struct Foo {}
         struct Bar { static void onUnchecked() { } }
@@ -1051,7 +1051,7 @@ template hasOnValueSet(Hook, T)
 
 ///
 @("hasOnValueSet")
-unittest
+@safe unittest
 {
     struct Hook {
         static int lastValue;
@@ -1081,7 +1081,7 @@ template hasOnErrorSet(Hook, T)
 
 ///
 @("hasOnErrorSet")
-unittest
+@safe unittest
 {
     struct Hook {
         static string lastErr;
@@ -1171,7 +1171,7 @@ version (D_Exceptions)
 
     ///
     @("Throw")
-    unittest
+    @safe unittest
     {
         static assert(!isDefaultConstructorEnabled!Throw);
         static assert(hasOnAccessEmptyValue!(Throw, string));
@@ -1209,7 +1209,7 @@ version (D_Exceptions)
 
     ///
     @("AsException")
-    unittest
+    @safe unittest
     {
         static assert(!isDefaultConstructorEnabled!AsException);
         static assert(hasOnErrorSet!(AsException, string));
@@ -1248,7 +1248,7 @@ static:
 
 ///
 @("RCAbort")
-@system unittest
+@safe unittest
 {
     // behavior checks
     static assert(!isDefaultConstructorEnabled!RCAbort);
@@ -1268,7 +1268,7 @@ static:
     }
 
     // unchecked - throws assert
-    version (D_Exceptions) assertThrown!Throwable({ ok!(string, RCAbort)(42); }());
+    version (D_Exceptions) () @trusted { assertThrown!Throwable({ ok!(string, RCAbort)(42); }()); }();
 
     {
         auto res = ok!(string, RCAbort)(42);
@@ -1287,8 +1287,11 @@ static:
     assert(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")).error == "foo");
     version (D_Exceptions)
     {
-        assertThrown!Throwable(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
-        assertThrown!Throwable(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
+        () @trusted
+        {
+            assertThrown!Throwable(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
+            assertThrown!Throwable(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
+        }();
     }
 }
 
@@ -1336,7 +1339,7 @@ Expected!(void, E, Hook) ok(E = string, Hook = Abort)()
 
 ///
 @("Expected from value")
-unittest
+@safe unittest
 {
     // void
     {
@@ -1397,7 +1400,7 @@ version (D_Exceptions)
 {
     ///
     @("consume from function call")
-    unittest
+    @safe unittest
     {
         auto fn(int v) { if (v == 42) throw new Exception("don't panic"); return v; }
 
@@ -1418,7 +1421,7 @@ Expected!(T, E, Hook) err(T = void, Hook = Abort, E)(auto ref E err)
 
 ///
 @("Expected from error value")
-unittest
+@safe unittest
 {
     // implicit void value type
     {
@@ -1453,12 +1456,12 @@ unittest
         msg     = message to use with assert
         handler = custom handler to be called on error
 +/
-T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
+ref T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
     //TODO: hook for customization
 
     static if (!is(T == void)) { if (res.hasValue) return res.value; }
-    else  { if (!res.hasError) return; }
+    else { if (!res.hasError) return; }
 
     version (D_BetterC) assert(0, msg);
     else
@@ -1470,10 +1473,10 @@ T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 }
 
 /// ditto
-T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
+auto ref T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 {
     static if (!is(T == void)) { if (res.hasValue) return res.value; }
-    else  { if (!res.hasError) return; }
+    else { if (!res.hasError) return; }
 
     static if (!is(typeof(handler(res.error)) == void))
         return handler(res.error);
@@ -1488,12 +1491,15 @@ version (D_Exceptions)
 {
     ///
     @("expect")
-    @system unittest
+    @safe unittest
     {
         assert(ok(42).expect("oops") == 42);
         ok().expect("oops"); // void value
-        assert(collectExceptionMsg!Throwable(Expected!int.init.expect("oops")) == "oops: empty");
-        assert(collectExceptionMsg!Throwable(err!int("foo").expect("oops")) == "oops: foo");
+        () @trusted
+        {
+            assert(collectExceptionMsg!Throwable(Expected!int.init.expect("oops")) == "oops: empty");
+            assert(collectExceptionMsg!Throwable(err!int("foo").expect("oops")) == "oops: foo");
+        }();
     }
 }
 
@@ -1543,14 +1549,17 @@ E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 
 ///
 @("expectErr")
-@system unittest
+@safe unittest
 {
     assert(err("foo").expectErr("oops") == "foo");
     version (D_Exceptions)
     {
-        assert(collectExceptionMsg!Throwable(Expected!int.init.expectErr("oops")) == "oops: empty");
-        assert(collectExceptionMsg!Throwable(ok(42).expectErr("oops")) == "oops: 42");
-        assert(collectExceptionMsg!Throwable(ok().expectErr("oops")) == "oops: empty"); // void value
+        () @trusted
+        {
+            assert(collectExceptionMsg!Throwable(Expected!int.init.expectErr("oops")) == "oops: empty");
+            assert(collectExceptionMsg!Throwable(ok(42).expectErr("oops")) == "oops: 42");
+            assert(collectExceptionMsg!Throwable(ok().expectErr("oops")) == "oops: empty"); // void value
+        }();
     }
 
     assert(ok("foo").expect!(a => "bar") == "foo");
@@ -1602,7 +1611,7 @@ auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref
 
 ///
 @("andThen")
-unittest
+@safe unittest
 {
     import std.format : format;
 
@@ -1681,7 +1690,7 @@ auto ref orElse(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(
 
 ///
 @("orElse")
-unittest
+@safe unittest
 {
     assert(ok(42).orElse(0) == 42);
     assert(ok(42).orElse!(() => 0) == 42);
@@ -1743,7 +1752,7 @@ template map(alias op, Hook = Abort)
 
 ///
 @("map")
-unittest
+@safe unittest
 {
     {
         assert(ok(42).map!(a => a/2).value == 21);
@@ -1797,7 +1806,7 @@ template mapError(alias op, Hook = Abort)
 
 ///
 @("mapError")
-unittest
+@safe unittest
 {
     {
         assert(ok(42).mapError!(e => e).value == 42);
@@ -1863,7 +1872,7 @@ template mapOrElse(alias valueOp, alias errorOp)
 
 ///
 @("mapOrElse")
-unittest
+@safe unittest
 {
     assert(ok(42).mapOrElse!(v => v/2, e => 0) == 21);
     assert(ok().mapOrElse!(() => true, e => false));
