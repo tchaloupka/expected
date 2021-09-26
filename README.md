@@ -2,7 +2,7 @@
 
 [![Latest version](https://img.shields.io/dub/v/expected.svg)](https://code.dlang.org/packages/expected)
 [![Dub downloads](https://img.shields.io/dub/dt/expected.svg)](http://code.dlang.org/packages/expected)
-[![Build status](https://img.shields.io/travis/tchaloupka/expected/master.svg?logo=travis&label=Travis%20CI)](https://travis-ci.org/tchaloupka/expected)
+[![Actions Status](https://github.com/tchaloupka/expected/workflows/ci/badge.svg)](https://github.com/tchaloupka/expected/actions)
 [![codecov](https://codecov.io/gh/tchaloupka/expected/branch/master/graph/badge.svg)](https://codecov.io/gh/tchaloupka/expected)
 [![license](https://img.shields.io/github/license/tchaloupka/expected.svg)](https://github.com/tchaloupka/expected/blob/master/LICENSE)
 
@@ -107,14 +107,11 @@ Alternatively, since it's a single file self-contained implementation, you can s
 
 Build is tested against:
 
-* dmd-2.089.0
-* dmd-2.088.1
-* dmd-2.087.1
-* dmd-2.086.1
-* dmd-2.085.1
-* ldc-1.18.0
-* ldc-1.17.0
-* ldc-1.16.0
-* ldc-1.15.0
-* ldc-1.14.0
-* dmd-beta
+* dmd-latest
+* dmd-2.095.1
+* dmd-2.094.2
+* dmd-2.091.1
+* ldc-latest
+* ldc-1.27.1
+* ldc-1.25.1
+* ldc-1.24.0
