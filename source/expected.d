@@ -1735,7 +1735,7 @@ template map(alias op, Hook = Abort)
         Params:
             self = an [Expected] object
     +/
-    auto map(T, E, H)(auto ref Expected!(T, E, H) self)
+    auto ref map(T, E, H)(auto ref Expected!(T, E, H) self)
         if ((is(T == void) && is(typeof(op()))) || (!is(T == void) && is(typeof(op(self.value)))))
     {
         static if (is(T == void)) alias U = typeof(op());
@@ -1791,7 +1791,7 @@ template mapError(alias op, Hook = Abort)
         Params:
             self = an [Expected] object
     +/
-    auto mapError(T, E, H)(auto ref Expected!(T, E, H) self)
+    auto ref mapError(T, E, H)(auto ref Expected!(T, E, H) self)
         if (is(typeof(op(self.error))))
     {
         alias U = typeof(op(self.error));
@@ -1850,7 +1850,7 @@ template mapOrElse(alias valueOp, alias errorOp)
         Params:
             self = an [Expected] object
     +/
-    auto mapOrElse(T, E, H)(auto ref Expected!(T, E, H) self)
+    auto ref mapOrElse(T, E, H)(auto ref Expected!(T, E, H) self)
         if (
             is(typeof(errorOp(self.error))) &&
             (
