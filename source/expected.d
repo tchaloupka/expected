@@ -227,8 +227,6 @@ version (unittest) {
     import std.exception : assertThrown, collectExceptionMsg;
 }
 
-@safe:
-
 /++
     `Expected!(T, E)` is a type that represents either success or failure.
 
@@ -402,10 +400,13 @@ struct Expected(T, E = string, Hook = Abort)
                 // Done, deallocate
                 static if (isChecked!Hook) bool ch = checked;
                 destroy(storage.payload);
-                static if (enableGCScan) pureGcRemoveRange(&storage.payload);
+                static if (enableGCScan) () @trusted { pureGcRemoveRange(&storage.payload); } ();
 
-                pureFree(storage);
-                storage = null;
+                () @trusted
+                {
+                    pureFree(storage);
+                    storage = null;
+                }();
 
                 static if (isChecked!Hook) { if (!ch) onUnchecked(); }
             }
@@ -1112,7 +1113,7 @@ static:
     }
 
     /// Handler for case when empty error is accessed.
-    void onAccessEmptyError() nothrow @nogc
+    void onAccessEmptyError() nothrow @nogc @safe
     {
         assert(0, "Error not set");
     }
@@ -1163,7 +1164,7 @@ version (D_Exceptions)
         }
 
         /// Handler for case when empty error is accessed.
-        void onAccessEmptyError()
+        void onAccessEmptyError() @safe
         {
             throw new Unexpected!string("Can't access error on expected value");
         }
@@ -1243,7 +1244,7 @@ static:
     /// Enabled reference counted payload
     immutable bool enableRefCountedPayload = true;
 
-    void onUnchecked() pure nothrow @nogc { assert(0, "result unchecked"); }
+    void onUnchecked() pure nothrow @nogc @safe { assert(0, "result unchecked"); }
 }
 
 ///
