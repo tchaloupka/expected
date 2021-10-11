@@ -246,14 +246,12 @@ version (unittest) {
 struct Expected(T, E = string, Hook = Abort)
     if (!is(E == void) && (isVoidValueEnabled!Hook || !is(T == void)))
 {
-    import core.lifetime : move;
+    import core.lifetime : forward;
     import std.meta : AliasSeq, Filter, NoDuplicates;
     import std.traits: isAssignable, isCopyable, hasIndirections, Unqual;
 
     private template noVoid(T) { enum noVoid = !is(T == void); } // Erase removes qualifiers
     private alias Types = NoDuplicates!(Filter!(noVoid, AliasSeq!(T, E)));
-
-    private template isMoveable(T) { enum isMoveable = __traits(compiles, (T a) { return a.move; }); }
 
     static foreach (i, CT; Types)
     {
@@ -271,20 +269,16 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isRefCountedPayloadEnabled!Hook)
             {
-                static if (isCopyable!CT) initialize(val);
-                else static if (isMoveable!CT) initialize(move(val));
-                else static assert(0, "Can't consume " ~ CT.stringof);
+                initialize(forward!val);
             }
             else
             {
-                static if (isCopyable!CT) storage = Payload(val);
-                else static if (isMoveable!CT) storage = Payload(move(val));
-                else static assert(0, "Can't consume " ~ CT.stringof);
+                storage = Payload(forward!val);
             }
             setState!CT();
 
-            static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-            static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+            static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(getValue()); }
+            static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(getError()); }
         }
 
         // static if (isCopyable!CT)
@@ -331,20 +325,16 @@ struct Expected(T, E = string, Hook = Abort)
         {
             static if (isRefCountedPayloadEnabled!Hook)
             {
-                static if (isCopyable!E) initialize(val);
-                else static if (isMoveable!E) initialize(move(val));
-                else static assert(0, "Can't consume " ~ E.stringof);
+                initialize(forward!val);
             }
             else
             {
-                static if (isCopyable!E) storage = Payload(val);
-                else static if (isMoveable!E) storage = Payload(val);
-                else static assert(0, "Can't consume " ~ E.stringof);
+                storage = Payload(forward!val);
             }
             setState!E(success ? State.value : State.error);
 
-            static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-            static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+            static if (hasOnValueSet!(Hook, E)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(getValue()); }
+            static if (hasOnErrorSet!(Hook, E)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(getError()); }
         }
 
         // static if (isCopyable!E)
@@ -430,14 +420,14 @@ struct Expected(T, E = string, Hook = Abort)
                     auto s = state;
                     static if (isRefCountedPayloadEnabled!Hook)
                     {
-                        if (!storage) initialize(rhs);
-                        else storage.payload = Payload(rhs);
+                        if (!storage) initialize(forward!rhs);
+                        else storage.payload = Payload(forward!rhs);
                     }
-                    else storage = Payload(rhs);
+                    else storage = Payload(forward!rhs);
                     setState!(CT)(s); // set previous state
 
-                    static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(val); }
-                    static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(val); }
+                    static if (hasOnValueSet!(Hook, CT)) { if (state == State.value) __traits(getMember, Hook, "onValueSet")(getValue()); }
+                    static if (hasOnErrorSet!(Hook, CT)) { if (state == State.error) __traits(getMember, Hook, "onErrorSet")(getError()); }
                 }
             }
         }
@@ -468,7 +458,7 @@ struct Expected(T, E = string, Hook = Abort)
             }
         } else {
             /// ditto
-            bool opEquals()(auto ref T rhs) { return hasValue && value == rhs; }
+            bool opEquals()(auto ref T rhs) { return hasValue && value == forward!rhs; }
         }
     }
 
@@ -485,8 +475,8 @@ struct Expected(T, E = string, Hook = Abort)
         bool opEquals()(auto ref Expected!(T, E, Hook) rhs)
         {
             if (state != rhs.state) return false;
-            static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
-            return error == rhs.error;
+            static if (!is(T == void)) { if (hasValue) return value == forwardValue!rhs; }
+            return error == forwardError!rhs;
         }
     }
 
@@ -639,9 +629,7 @@ struct Expected(T, E = string, Hook = Abort)
         {
             this()(auto ref CT val)
             {
-                static if (isCopyable!CT) __traits(getMember, Payload, "values")[i] = val;
-                else static if (isMoveable!CT) __traits(getMember, Payload, "values")[i] = move(val);
-                else static assert(0, "Can't consume " ~ CT.stringof);
+                __traits(getMember, Payload, "values")[i] = forward!val;
             }
 
             // static if (isCopyable!CT)
@@ -688,7 +676,7 @@ struct Expected(T, E = string, Hook = Abort)
             import std.conv : emplace;
 
             allocateStore();
-            emplace(&storage.payload, args);
+            emplace(&storage.payload, forward!args);
             storage.count = 1;
             storage.state = State.empty;
             static if (isChecked!Hook) storage.checked = false;
@@ -1203,8 +1191,9 @@ version (D_Exceptions)
         +/
         void onErrorSet(E)(auto ref E err)
         {
+            import core.lifetime : forward;
             static if (is(E : Throwable)) throw E;
-            else throw new Unexpected!E(err);
+            else throw new Unexpected!E(forward!err);
         }
     }
 
@@ -1315,8 +1304,9 @@ version (D_Exceptions)
         pure @safe @nogc nothrow
         this()(auto ref T value, string file = __FILE__, size_t line = __LINE__)
         {
+            import core.lifetime : forward;
             import std.traits : isAssignable;
-            static if (isAssignable!(string, T)) super(value, file, line);
+            static if (isAssignable!(string, T)) super(forward!value, file, line);
             else super("Unexpected error", file, line);
 
             this.error = error;
@@ -1329,7 +1319,8 @@ version (D_Exceptions)
 +/
 Expected!(T, E, Hook) ok(E = string, Hook = Abort, T)(auto ref T value)
 {
-    return Expected!(T, E, Hook)(value);
+    import core.lifetime : forward;
+    return Expected!(T, E, Hook)(forward!value);
 }
 
 /// ditto
@@ -1383,15 +1374,16 @@ Expected!(void, E, Hook) ok(E = string, Hook = Abort)()
 +/
 template consume(alias fun, Hook = Abort)
 {
-    auto consume(Args...)(auto ref Args args) if (is(typeof(fun(args))))
+    import core.lifetime : forward;
+    auto consume(Args...)(auto ref Args args) if (is(typeof(fun(forward!args))))
     {
         import std.traits : hasFunctionAttributes;
 
-        alias T = typeof(fun(args));
-        static if (is(hasFunctionAttributes!(fun, "nothrow"))) return ok!Exception(fun(args));
+        alias T = typeof(fun(forward!args));
+        static if (is(hasFunctionAttributes!(fun, "nothrow"))) return ok!Exception(fun(forward!args));
         else
         {
-            try return Expected!(T, Exception)(fun(args));
+            try return Expected!(T, Exception)(fun(forward!args));
             catch (Exception ex) return err!T(ex);
         }
     }
@@ -1415,9 +1407,10 @@ version (D_Exceptions)
 +/
 Expected!(T, E, Hook) err(T = void, Hook = Abort, E)(auto ref E err)
 {
+    import core.lifetime : forward;
     static if (Expected!(T, E, Hook).Types.length == 1 && !is(T == void))
-        return Expected!(T, E, Hook)(err, false);
-    else return Expected!(T, E, Hook)(err);
+        return Expected!(T, E, Hook)(forward!err, false);
+    else return Expected!(T, E, Hook)(forward!err);
 }
 
 ///
@@ -1457,7 +1450,7 @@ Expected!(T, E, Hook) err(T = void, Hook = Abort, E)(auto ref E err)
         msg     = message to use with assert
         handler = custom handler to be called on error
 +/
-ref T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
+auto ref T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
     //TODO: hook for customization
 
@@ -1479,11 +1472,11 @@ auto ref T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX r
     static if (!is(T == void)) { if (res.hasValue) return res.value; }
     else { if (!res.hasError) return; }
 
-    static if (!is(typeof(handler(res.error)) == void))
-        return handler(res.error);
+    static if (!is(typeof(handler(forwardError!res)) == void))
+        return handler(forwardError!res);
     else
     {
-        handler(res.error);
+        handler(forwardError!res);
         return T.init;
     }
 }
@@ -1512,7 +1505,7 @@ version (D_Exceptions)
         msg = message to use with assert
         handler = custom handler to be called on value
 +/
-E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
+auto ref E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
 {
     //TODO: hook for customization
 
@@ -1524,25 +1517,25 @@ E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string msg)
         import std.format : format;
         static if (!is(T == void))
         {
-            if (res.hasValue) assert(0, format!"%s: %s"(msg, res.value));
+            if (res.hasValue) assert(0, format!"%s: %s"(msg, forwardValue!res));
         }
         assert(0, format!"%s: empty"(msg));
     }
 }
 
 /// ditto
-E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
+auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 {
     if (res.hasError) return res.error;
 
     static if (!is(typeof(handler(T.init)) == void))
     {
-        static if (!is(T == void)) return handler(res.hasValue ? res.value : T.init);
+        static if (!is(T == void)) return handler(res.hasValue ? forwardValue!res : T.init);
         else return handler();
     }
     else
     {
-        static if (!is(T == void)) handler(res.hasValue ? res.value : T.init);
+        static if (!is(T == void)) handler(res.hasValue ? forwardValue!res : T.init);
         else handler();
         return T.init;
     }
@@ -1587,22 +1580,24 @@ E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 auto ref andThen(EX : Expected!(T, E, H), VEX : Expected!(VT, E, H), T, VT, E, H)(
     auto ref EX exp, auto ref VEX value)
 {
+    import core.lifetime : forward;
     static if (is(T == VT)) return exp.hasError ? exp : value;
-    else return exp.hasError ? err!(VT, H)(exp.error) : value;
+    else return exp.hasError ? err!(VT, H)(forwardError!exp) : value;
 }
 
 /// ditto
-auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref EX exp, Args args)
+auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref EX exp, auto ref Args args)
 {
-    static if (!is(T == void) && is(typeof(pred(T.init, args)) : Expected!(VT, E, H), VT))
+    import core.lifetime : forward;
+    static if (!is(T == void) && is(typeof(pred(forwardValue!exp, forward!args)) : Expected!(VT, E, H), VT))
     {
-        static if (is(T == VT)) return exp.hasError ? exp : pred(exp.value, args);
-        else return exp.hasError ? err!(VT, H)(exp.error) : pred(exp.value, args);
+        static if (is(T == VT)) return exp.hasError ? exp : pred(forwardValue!exp, forward!args);
+        else return exp.hasError ? err!(VT, H)(forwardError!exp) : pred(forwardValue!exp, forward!args);
     }
-    else static if (is(typeof(pred(args)) : Expected!(VT, E, H), VT))
+    else static if (is(typeof(pred(forward!args)) : Expected!(VT, E, H), VT))
     {
-        static if (is(T == VT)) return exp.hasError ? exp : pred(args);
-        else return exp.hasError ? err!(VT, H)(exp.error) : pred(args);
+        static if (is(T == VT)) return exp.hasError ? exp : pred(forward!args);
+        else return exp.hasError ? err!(VT, H)(forwardError!exp) : pred(forward!args);
     }
     else
     {
@@ -1665,26 +1660,28 @@ auto ref andThen(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(auto ref
 auto ref U orElse(EX, U)(auto ref EX exp, lazy U value)
     if (is(EX : Expected!(T, E, H), T, E, H) && is(U : T))
 {
-    return exp.orElse!value;
+    import core.lifetime : forward;
+    return forward!exp.orElse!value;
 }
 
 /// ditto
 auto ref orElse(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(
-    auto ref EX exp, Args args)
+    auto ref EX exp, auto ref Args args)
 {
-    static if (is(typeof(pred(args)) : T))
-        return exp.hasError ? pred(args) : exp.value;
-    else static if (is(typeof(pred(exp.error, args)) : T))
-        return exp.hasError ? pred(exp.error, args) : exp.value;
-    else static if (is(typeof(pred(args)) : Expected!(T, VE, H), VE))
+    import core.lifetime : forward;
+    static if (is(typeof(pred(forward!args)) : T))
+        return exp.hasError ? pred(forward!args) : exp.value;
+    else static if (is(typeof(pred(forwardError!exp, forward!args)) : T))
+        return exp.hasError ? pred(forwardError!exp, forward!args) : exp.value;
+    else static if (is(typeof(pred(forward!args)) : Expected!(T, VE, H), VE))
     {
-        static if (is(E == VE)) return exp.hasError ? pred(args) : exp;
-        else return exp.hasError ? pred(args) : ok!VE(exp.value);
+        static if (is(E == VE)) return exp.hasError ? pred(forward!args) : exp;
+        else return exp.hasError ? pred(forward!args) : ok!VE(forwardValue!exp);
     }
-    else static if (is(typeof(pred(exp.error, args)) : Expected!(T, VE, H), VE))
+    else static if (is(typeof(pred(forwardError!exp, forward!args)) : Expected!(T, VE, H), VE))
     {
-        static if (is(E == VE)) return exp.hasError ? pred(exp.error, args) : exp;
-        else return exp.hasError ? pred(exp.error, args) : ok!VE(exp.value);
+        static if (is(E == VE)) return exp.hasError ? pred(forwardError!exp, forward!args) : exp;
+        else return exp.hasError ? pred(forwardError!exp, forward!args) : ok!VE(forwardValue!exp);
     }
     else static assert(0, "Expecting predicate of same value type");
 }
@@ -1737,16 +1734,16 @@ template map(alias op, Hook = Abort)
             self = an [Expected] object
     +/
     auto ref map(T, E, H)(auto ref Expected!(T, E, H) self)
-        if ((is(T == void) && is(typeof(op()))) || (!is(T == void) && is(typeof(op(self.value)))))
+        if ((is(T == void) && is(typeof(op()))) || (!is(T == void) && is(typeof(op(forwardValue!self)))))
     {
         static if (is(T == void)) alias U = typeof(op());
-        else alias U = typeof(op(self.value));
+        else alias U = typeof(op(forwardValue!self));
 
-        if (self.hasError) return err!(U, Hook)(self.error);
+        if (self.hasError) return err!(U, Hook)(forwardError!self);
         else
         {
             static if (is(T == void)) return ok!(E, Hook)(op());
-            else return ok!(E, Hook)(op(self.value));
+            else return ok!(E, Hook)(op(forwardValue!self));
         }
     }
 }
@@ -1793,15 +1790,15 @@ template mapError(alias op, Hook = Abort)
             self = an [Expected] object
     +/
     auto ref mapError(T, E, H)(auto ref Expected!(T, E, H) self)
-        if (is(typeof(op(self.error))))
+        if (is(typeof(op(forwardError!self))))
     {
-        alias U = typeof(op(self.error));
+        alias U = typeof(op(forwardError!self));
 
         static if (!is(T == void))
         {
-            if (self.hasValue) return ok!(U, Hook)(self.value);
+            if (self.hasValue) return ok!(U, Hook)(forwardValue!self);
         }
-        return err!(T, Hook)(op(self.error));
+        return err!(T, Hook)(op(forwardError!self));
     }
 }
 
@@ -1853,20 +1850,20 @@ template mapOrElse(alias valueOp, alias errorOp)
     +/
     auto ref mapOrElse(T, E, H)(auto ref Expected!(T, E, H) self)
         if (
-            is(typeof(errorOp(self.error))) &&
+            is(typeof(errorOp(forwardError!self))) &&
             (
-                (is(T == void) && is(typeof(valueOp()) == typeof(errorOp(self.error)))) ||
-                (!is(T == void) && is(typeof(valueOp(self.value)) == typeof(errorOp(self.error))))
+                (is(T == void) && is(typeof(valueOp()) == typeof(errorOp(forwardError!self)))) ||
+                (!is(T == void) && is(typeof(valueOp(self.value)) == typeof(errorOp(forwardError!self))))
             )
         )
     {
-        alias U = typeof(errorOp(self.error));
+        alias U = typeof(errorOp(forwardError!self));
 
-        if (self.hasError) return errorOp(self.error);
+        if (self.hasError) return errorOp(forwardError!self);
         else
         {
             static if (is(T == void)) return valueOp();
-            else return valueOp(self.value);
+            else return valueOp(forwardValue!self);
         }
     }
 }
@@ -1879,4 +1876,79 @@ template mapOrElse(alias valueOp, alias errorOp)
     assert(ok().mapOrElse!(() => true, e => false));
     assert(err!int("foo").mapOrElse!(v => v/2, e => 42) == 42);
     assert(!err("foo").mapOrElse!(() => true, e => false));
+}
+
+private template forwardMember(alias arg, string member)
+{
+    import core.lifetime : move;
+    // lvalue arg or non-moveable member (rvalue or const/immutable)
+    static if (__traits(isRef,  arg) ||
+               __traits(isOut,  arg) ||
+               __traits(isLazy, arg) ||
+               !is(typeof(move(__traits(getMember, arg, member)))))
+        @property auto ref forwardMember(){ return __traits(getMember, arg, member); }
+    // rvalue arg and moveable member (mutable lvalue)
+    else
+        @property auto forwardMember(){ return move(__traits(getMember, arg, member)); }
+}
+
+private alias forwardValue(alias arg) = forwardMember!(arg, "value");
+private alias forwardError(alias arg) = forwardMember!(arg, "error");
+
+@("forwardMember")
+@safe unittest
+{
+    struct A
+    {
+        int i;
+        ~this() {}
+    }
+    struct S
+    {
+        A a;
+        A rvalue() { return a; }
+        ref A lvalue() { return a; }
+    }
+
+    bool foo(T)(auto ref T val)
+    {
+        return __traits(isRef, val);
+    }
+    bool bar(string member, T)(auto ref T val, out int after)
+    {
+        auto res = foo(forwardMember!(val, member));
+        after = val.a.i;
+        return res;
+    }
+
+    int after;
+
+    // rvalue arg, member -> foo gets rvalue by move
+    assert(bar!"a"(S(A(1729)), after) == false);
+    assert(after == 0);
+
+    // rvalue arg, rvalue method -> foo gets rvalue as return value of `rvalue` method, no moves
+    assert(bar!"rvalue"(S(A(1729)), after) == false);
+    assert(after == 1729);
+
+    // rvalue arg, lvalue method -> foo gets rvalue by move
+    assert(bar!"lvalue"(S(A(1729)), after) == false);
+    assert(after == 0);
+
+    auto s = S(A(42));
+
+    // lvalue arg, member -> foo gets lvalue
+    assert(bar!"a"(s, after) == true);
+    assert(after == 42);
+    assert(s.a.i == 42);
+
+    // lvalue arg, rvalue method -> foo gets rvalue as return value of `rvalue` method, no moves
+    assert(bar!"rvalue"(s, after) == false);
+    assert(after == 42);
+    assert(s.a.i == 42);
+
+    // lvalue arg, lvalue method -> foo gets lvalue
+    assert(bar!"lvalue"(s, after) == true);
+    assert(after == 42);
+    assert(s.a.i == 42);
 }
