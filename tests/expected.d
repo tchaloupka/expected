@@ -461,3 +461,34 @@ unittest
     static assert(__traits(compiles, ok.andThen!foo));
     static assert(__traits(compiles, err("foo").orElse!foo));
 }
+
+@("disabled copy constructor")
+@system unittest
+{
+    import std.algorithm : move;
+
+    static int destroyed;
+
+    static struct Foo
+    {
+        int n;
+        @disable this(this);
+        ~this()
+        {
+            destroyed += n;
+        }
+    }
+
+    static auto gen()
+    {
+        Foo f;
+        f.n = 42;
+        return ok!int(f.move());
+    }
+
+    {
+        Foo f;
+        f = gen().expect("uh");
+    }
+    assert(destroyed == 42);
+}

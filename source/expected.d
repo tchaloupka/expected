@@ -1454,7 +1454,9 @@ auto ref T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string
 {
     //TODO: hook for customization
 
-    static if (!is(T == void)) { if (res.hasValue) return res.value; }
+    static if (!is(T == void)) {
+        if (res.hasValue) return forwardValue!res;
+    }
     else { if (!res.hasError) return; }
 
     version (D_BetterC) assert(0, msg);
@@ -1469,7 +1471,7 @@ auto ref T expect(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy string
 /// ditto
 auto ref T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 {
-    static if (!is(T == void)) { if (res.hasValue) return res.value; }
+    static if (!is(T == void)) { if (res.hasValue) return forwardValue!res; }
     else { if (!res.hasError) return; }
 
     static if (!is(typeof(handler(forwardError!res)) == void))
