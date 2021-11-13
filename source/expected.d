@@ -1474,29 +1474,39 @@ auto ref T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX r
     static if (!is(T == void)) { if (res.hasValue) return forwardValue!res; }
     else { if (!res.hasError) return; }
 
-    static if (!is(typeof(handler(forwardError!res)) == void))
+    static if (!is(typeof(handler(forwardError!res)) == noreturn) && !is(typeof(handler(forwardError!res)) == void))
         return handler(forwardError!res);
     else
     {
         handler(forwardError!res);
-        return T.init;
+        static if (!is(T == void)) return T.init;
     }
 }
 
-version (D_Exceptions)
+///
+@("expect")
+@safe unittest
 {
-    ///
-    @("expect")
-    @safe unittest
+    assert(ok(42).expect("oops") == 42);
+    ok().expect("oops"); // void value
+
+    version (D_Exceptions)
     {
-        assert(ok(42).expect("oops") == 42);
-        ok().expect("oops"); // void value
         () @trusted
         {
             assert(collectExceptionMsg!Throwable(Expected!int.init.expect("oops")) == "oops: empty");
             assert(collectExceptionMsg!Throwable(err!int("foo").expect("oops")) == "oops: foo");
         }();
     }
+
+    assert(ok("foo").expect!(a => "bar") == "foo");
+    assert(err!string("foo").expect!(a => "bar") == "bar");
+    assert(err!string("foo").expect!((a) {}) is null);
+
+    static struct NonCopyable { @disable this(this); int foo; }
+    assert(err!NonCopyable(42).expect!((e) {}) == NonCopyable.init);
+    err!void(42).expect!((e) {});
+    ok!int().expect!(e => assert(0));
 }
 
 /++ Unwraps a result, yielding the content of an error value.
@@ -1530,7 +1540,7 @@ auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref E
 {
     if (res.hasError) return res.error;
 
-    static if (!is(typeof(handler(T.init)) == void))
+    static if (!is(typeof(handler(forwardError!res)) == noreturn) && !is(typeof(handler(T.init)) == void))
     {
         static if (!is(T == void)) return handler(res.hasValue ? forwardValue!res : T.init);
         else return handler();
@@ -1539,7 +1549,7 @@ auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref E
     {
         static if (!is(T == void)) handler(res.hasValue ? forwardValue!res : T.init);
         else handler();
-        return T.init;
+        return E.init;
     }
 }
 
@@ -1558,13 +1568,10 @@ auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref E
         }();
     }
 
-    assert(ok("foo").expect!(a => "bar") == "foo");
-    assert(err!string("foo").expect!(a => "bar") == "bar");
-    assert(err!string("foo").expect!((a) {}) is null);
-
     assert(ok("foo").expectErr!(a => "bar") == "bar");
     assert(err!string("foo").expectErr!(a => "bar") == "foo");
     assert(ok!string("foo").expectErr!((a) {}) is null);
+    assert(ok!string(42).expectErr!((a) {}) is null);
 }
 
 /++
@@ -1953,4 +1960,8 @@ private alias forwardError(alias arg) = forwardMember!(arg, "error");
     assert(bar!"lvalue"(s, after) == true);
     assert(after == 42);
     assert(s.a.i == 42);
+}
+
+static if (__VERSION__ < 2096) {
+    private alias noreturn = void;
 }
