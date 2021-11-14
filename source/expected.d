@@ -1479,7 +1479,13 @@ auto ref T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX r
     else
     {
         handler(forwardError!res);
-        static if (!is(T == void)) return T.init;
+        static if (__VERSION__ < 2096) {
+            static if (!is(T == void))
+                return T.init;
+        } else {
+            static if (!is(T == void) && !is(typeof(handler(forwardError!res)) == noreturn)) // avoid 'statement is not reachable'
+                return T.init;
+        }
     }
 }
 
@@ -1507,6 +1513,7 @@ auto ref T expect(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX r
     assert(err!NonCopyable(42).expect!((e) {}) == NonCopyable.init);
     err!void(42).expect!((e) {});
     ok!int().expect!(e => assert(0));
+    ok!int(42).expect!(e => assert(0));
 }
 
 /++ Unwraps a result, yielding the content of an error value.
@@ -1549,7 +1556,10 @@ auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref E
     {
         static if (!is(T == void)) handler(res.hasValue ? forwardValue!res : T.init);
         else handler();
-        return E.init;
+        static if (__VERSION__ < 2096)
+            return E.init;
+        else static if (!is(typeof(handler(forwardError!res)) == noreturn)) // avoid 'statement is not reachable'
+            return E.init;
     }
 }
 
@@ -1572,6 +1582,7 @@ auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref E
     assert(err!string("foo").expectErr!(a => "bar") == "foo");
     assert(ok!string("foo").expectErr!((a) {}) is null);
     assert(ok!string(42).expectErr!((a) {}) is null);
+    err!int(42).expectErr!(a => assert(0));
 }
 
 /++
