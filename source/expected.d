@@ -1319,8 +1319,11 @@ version (D_Exceptions)
 +/
 Expected!(T, E, Hook) ok(E = string, Hook = Abort, T)(auto ref T value)
 {
-    import core.lifetime : forward;
-    return Expected!(T, E, Hook)(forward!value);
+    import core.lifetime : forward, move;
+    static if (__traits(compiles, Expected!(T, E, Hook)(forward!value)))
+        return Expected!(T, E, Hook)(forward!value);
+    else
+        return Expected!(T, E, Hook)(value.move());
 }
 
 /// ditto
