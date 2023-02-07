@@ -458,8 +458,8 @@ unittest
 @system unittest
 {
     auto foo() @system { return ok; }
-    static assert(__traits(compiles, ok.andThen!foo));
-    static assert(__traits(compiles, err("foo").orElse!foo));
+    static assert(__traits(compiles, { auto r = ok.andThen!foo; }));
+    static assert(__traits(compiles, { auto r = err("foo").orElse!foo; }));
 }
 
 @("disabled copy constructor")
