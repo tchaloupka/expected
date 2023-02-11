@@ -15,11 +15,16 @@ expected_dep = declare_dependency(
     link_with: expected_lib
 )
 
+bc_link_args = []
+if meson.get_compiler('d').get_id() == 'llvm'
+    bc_link_args += '-link-defaultlib-shared=false'
+endif
+
 test_exe = executable(
     'expected-test',
     ['source/expected.d', 'tests/expected.d'],
     include_directories: include_directories('source'),
     d_args: ['-betterC', '-unittest'],
-    link_args: ['-link-defaultlib-shared=false']
+    link_args: bc_link_args
 )
 test('bctest', test_exe)
