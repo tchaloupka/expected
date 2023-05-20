@@ -718,7 +718,7 @@ struct Expected(T, E = string, Hook = Abort)
             void checked(bool ch) { assert(storage); storage.checked = ch; }
         }
 
-        ref inout(E) getError()() inout
+        auto ref inout(E) getError()() inout
         {
             assert(storage);
             static if (__VERSION__ < 2078) // workaround - see: https://issues.dlang.org/show_bug.cgi?id=15094
@@ -736,7 +736,7 @@ struct Expected(T, E = string, Hook = Abort)
 
         static if (!is(T == void))
         {
-            ref inout(T) getValue()() inout
+            auto ref inout(T) getValue()() inout
             {
                 assert(storage);
                 static if (__VERSION__ < 2078) // workaround - see: https://issues.dlang.org/show_bug.cgi?id=15094
@@ -760,7 +760,7 @@ struct Expected(T, E = string, Hook = Abort)
         State state = State.empty;
         static if (isChecked!Hook) bool checked = false;
 
-        ref inout(E) getError()() inout
+        auto ref inout(E) getError()() inout
         {
             static if (Types.length == 1) return __traits(getMember, storage, "values")[0];
             else return __traits(getMember, storage, "values")[1];
@@ -768,7 +768,7 @@ struct Expected(T, E = string, Hook = Abort)
 
         static if (!is(T == void))
         {
-            ref inout(T) getValue()() inout
+            auto ref inout(T) getValue()() inout
             {
                 return __traits(getMember, storage, "values")[0];
             }
@@ -1531,7 +1531,7 @@ auto ref E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy str
 {
     //TODO: hook for customization
 
-    if (res.hasError) return res.error;
+    if (res.hasError) return forwardError!res;
 
     version (D_BetterC) assert(0, msg);
     else
@@ -1548,7 +1548,7 @@ auto ref E expectErr(EX : Expected!(T, E, H), T, E, H)(auto ref EX res, lazy str
 /// ditto
 auto ref E expectErr(alias handler, EX : Expected!(T, E, H), T, E, H)(auto ref EX res)
 {
-    if (res.hasError) return res.error;
+    if (res.hasError) return forwardError!res;
 
     static if (!is(typeof(handler(forwardError!res)) == noreturn) && !is(typeof(handler(T.init)) == void))
     {
