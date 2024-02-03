@@ -1095,7 +1095,7 @@ static:
     immutable bool enableDefaultConstructor = false;
 
     /// Handler for case when empty value is accessed.
-    void onAccessEmptyValue(E)(E err) nothrow @nogc
+    void onAccessEmptyValue(E)(E err) nothrow @nogc @safe
     {
         assert(0, "Value not set");
     }
