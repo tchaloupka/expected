@@ -523,7 +523,7 @@ struct Expected(T, E = string, Hook = Abort)
 
                 It returns `T.init` when hook doesn't provide `onAccessEmptyValue`.
             +/
-            @property auto ref inout(T) value() inout
+            @property auto ref inout(T) value()() inout
             {
                 if (state != State.value)
                 {
@@ -534,7 +534,7 @@ struct Expected(T, E = string, Hook = Abort)
                 return getValue();
             }
         } else {
-            @property auto ref T value()
+            @property auto ref T value()()
             {
                 checked = true;
 
