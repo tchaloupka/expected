@@ -331,16 +331,19 @@ unittest
 //FIXME: doesn't work - some older dmd error
 static if (__VERSION__ >= 2082)
 {
-    @("toHash")
-    unittest
+    version (D_BetterC) {} else
     {
-        assert(ok(42).hashOf == 42.hashOf);
-        assert(ok(42).hashOf != 43.hashOf);
-        assert(ok(42).hashOf == ok(42).hashOf);
-        assert(ok(42).hashOf != ok(43).hashOf);
-        assert(ok(42).hashOf == ok!bool(42).hashOf);
-        assert(ok(42).hashOf != err("foo").hashOf);
-        assert(err("foo").hashOf == err("foo").hashOf);
+        @("toHash")
+        unittest
+        {
+            assert(ok(42).hashOf == 42.hashOf);
+            assert(ok(42).hashOf != 43.hashOf);
+            assert(ok(42).hashOf == ok(42).hashOf);
+            assert(ok(42).hashOf != ok(43).hashOf);
+            assert(ok(42).hashOf == ok!bool(42).hashOf);
+            assert(ok(42).hashOf != err("foo").hashOf);
+            assert(err("foo").hashOf == err("foo").hashOf);
+        }
     }
 }
 
