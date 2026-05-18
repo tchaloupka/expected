@@ -224,7 +224,7 @@ version (D_Exceptions)
 
 version (unittest) {
     import std.algorithm : reverse;
-    import std.exception : assertThrown, collectExceptionMsg;
+    import std.exception : assertThrown, collectException, collectExceptionMsg;
 }
 
 /++
@@ -1170,6 +1170,16 @@ version (D_Exceptions)
         assertThrown!(Unexpected!string)(ok!(string, Throw)(42).error);
         assertThrown!(Unexpected!string)(err!(int, Throw)("foo").value);
         assertThrown!(Unexpected!int)(err!(bool, Throw)(-1).value);
+
+        // the error value must be stored on the thrown exception
+        {
+            auto ex = collectException!(Unexpected!string)(err!(int, Throw)("foo").value);
+            assert(ex !is null && ex.error == "foo");
+        }
+        {
+            auto ex = collectException!(Unexpected!int)(err!(bool, Throw)(-1).value);
+            assert(ex !is null && ex.error == -1);
+        }
     }
 
     /++ Hook implementation that behaves like a thrown exception.
