@@ -913,7 +913,7 @@ template isVoidValueEnabled(Hook)
             is(typeof(__traits(getMember, Hook, "enableVoidValue")) : bool),
             "Hook's enableVoidValue is expected to be of type bool"
         );
-        enum isVoidValueEnabled = __traits(getMember, Hook, "isVoidValueEnabled");
+        enum isVoidValueEnabled = __traits(getMember, Hook, "enableVoidValue");
     }
     else enum isVoidValueEnabled = true;
 }
@@ -924,7 +924,13 @@ template isVoidValueEnabled(Hook)
 {
     struct Hook { static immutable bool enableVoidValue = false; }
     assert(!ok().hasError); // void values are enabled by default
+    static assert(!isVoidValueEnabled!Hook);
     static assert(!__traits(compiles, ok!(string, Hook)())); // won't compile
+    assert(ok!(string, Hook)(42) == 42); // non void values are still usable
+
+    struct Hook2 { static immutable bool enableVoidValue = true; }
+    static assert(isVoidValueEnabled!Hook2);
+    assert(!ok!(string, Hook2)().hasError);
 }
 
 /// Template to determine if hook provides function called on empty value.
