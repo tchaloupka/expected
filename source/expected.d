@@ -202,17 +202,19 @@ version (D_Exceptions)
     @safe unittest
     {
         import exp = expected;
+        import expected : orElse; // UFCS doesn't work with renamed imports
+        import std.exception : assertThrown;
 
         // define our Expected type using Exception as Error values
         // and Throw hook, which throws when empty value or error is accessed
         template Expected(T)
         {
-            alias Expected = exp.Expected!(T, Exception, Throw);
+            alias Expected = exp.Expected!(T, Exception, exp.Throw);
         }
 
         // create wrappers for simplified usage of our Expected
-        auto ok(T)(T val) { return exp.ok!(Exception, Throw)(val); }
-        auto err(T)(Exception err) { return exp.err!(T, Throw)(err); }
+        auto ok(T)(T val) { return exp.ok!(Exception, exp.Throw)(val); }
+        auto err(T)(Exception err) { return exp.err!(T, exp.Throw)(err); }
 
         // use it as normal
         assert(ok(42) == 42);
