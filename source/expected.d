@@ -1859,6 +1859,7 @@ template map(alias op, Hook = void)
         static assert(is(typeof(ok!(string, SrcHook)(42).map!(a => a/2)) == Expected!(int, string, SrcHook)));
         static assert(is(typeof(err!(int, SrcHook)("foo").map!(a => a/2)) == Expected!(int, string, SrcHook)));
         static assert(is(typeof(ok!(string, SrcHook)().map!(() => 42)) == Expected!(int, string, SrcHook)));
+        static assert(is(typeof(ok!(string, SrcHook)(42).map!((int a) {})) == Expected!(void, string, SrcHook)));
     }
 
     // map to void
