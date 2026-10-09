@@ -101,6 +101,10 @@ $(TABLE_ROWS
       - Set $(LREF Expected) instances to use reference counted payload storage. It's usefull
         when combined with `onUnchecked` to forcibly check that the result was checked for value
         or error.
+    * - `enableMustUse`
+      - Defines if $(LREF Expected) is marked with `@mustuse` attribute, so the result of a function
+        returning it can't be silently discarded (use `cast(void)` to discard it explicitly).
+        It's enabled by default. Has no effect on compilers without `core.attribute.mustuse`.
     * - `enableVoidValue`
       - Defines if $(LREF Expected) supports `void` values. It's enabled by default so this
         hook can be used to disable it.
@@ -245,8 +249,12 @@ version (unittest) {
         E    = represents type of the error value.
         Hook = defines the $(LREF Expected) type behavior
 +/
-struct Expected(T, E = string, Hook = Abort)
+template Expected(T, E = string, Hook = Abort)
     if (!is(E == void) && (isVoidValueEnabled!Hook || !is(T == void)))
+{
+// explicit template so the UDA can depend on Hook
+@(MustUseAttr!Hook)
+struct Expected
 {
     import core.lifetime : forward;
     import std.meta : AliasSeq, Filter, NoDuplicates;
@@ -466,7 +474,7 @@ struct Expected(T, E = string, Hook = Abort)
 
     static if (!isChecked!Hook) {
         /// Checks whether this $(LREF Expected) object and `rhs` contain the same expected value or error value.
-        bool opEquals()(const auto ref Expected!(T, E, Hook) rhs) const
+        bool opEquals()(const auto ref Expected rhs) const
         {
             if (state != rhs.state) return false;
             static if (!is(T == void)) { if (hasValue) return value == rhs.value; }
@@ -474,7 +482,7 @@ struct Expected(T, E = string, Hook = Abort)
         }
     } else {
         /// ditto
-        bool opEquals()(auto ref Expected!(T, E, Hook) rhs)
+        bool opEquals()(auto ref Expected rhs)
         {
             if (state != rhs.state) return false;
             static if (!is(T == void)) { if (hasValue) return value == forwardValue!rhs; }
@@ -802,6 +810,7 @@ struct Expected(T, E = string, Hook = Abort)
         state = s;
     }
 }
+}
 
 /++ Template to determine if hook enables or disables copy constructor.
 
@@ -905,6 +914,55 @@ template isDefaultConstructorEnabled(Hook)
     struct Bar { static immutable bool enableDefaultConstructor = true; }
     static assert(!isDefaultConstructorEnabled!Foo);
     static assert(isDefaultConstructorEnabled!Bar);
+}
+
+/++ Template to determine if provided Hook enables `@mustuse` attribute on $(LREF Expected).
+
+    It is enabled by default. On compilers without `core.attribute.mustuse` it has no effect.
++/
+template isMustUseEnabled(Hook)
+{
+    static if (__traits(hasMember, Hook, "enableMustUse"))
+    {
+        static assert(
+            is(typeof(__traits(getMember, Hook, "enableMustUse")) : bool),
+            "Hook's enableMustUse is expected to be of type bool"
+        );
+        enum isMustUseEnabled = __traits(getMember, Hook, "enableMustUse");
+    }
+    else enum isMustUseEnabled = true;
+}
+
+///
+@("isMustUseEnabled")
+@safe unittest
+{
+    struct Foo {}
+    struct Bar { static immutable bool enableMustUse = false; }
+    static assert(isMustUseEnabled!Foo);
+    static assert(!isMustUseEnabled!Bar);
+
+    static if (hasMustUse)
+    {
+        static assert(!__traits(compiles, { ok(42); })); // result can't be discarded
+        static assert(__traits(compiles, { cast(void) ok(42); })); // unless explicitly
+    }
+    static assert(__traits(compiles, { ok!(string, Bar)(42); }));
+}
+
+static if (__traits(compiles, { import core.attribute : mustuse; }))
+{
+    private import core.attribute : mustuse;
+    private enum hasMustUse = true;
+}
+else private enum hasMustUse = false;
+
+private enum noMustUse;
+
+private template MustUseAttr(Hook)
+{
+    static if (hasMustUse && isMustUseEnabled!Hook) alias MustUseAttr = mustuse;
+    else alias MustUseAttr = noMustUse;
 }
 
 /// Template to determine if provided Hook enables void values for $(LREF Expected)
@@ -1033,8 +1091,8 @@ version (D_Exceptions)
         assert(exp.andThen(exp2).error == "foo"); // passed by ref so no this(this) called
 
         // check for checked result
-        assertThrown({ ok!(string, Hook)(42); }());
-        assertThrown({ err!(void, Hook)("foo"); }());
+        assertThrown({ cast(void) ok!(string, Hook)(42); }());
+        assertThrown({ cast(void) err!(void, Hook)("foo"); }());
     }
 }
 
@@ -1251,7 +1309,7 @@ version (D_Exceptions)
         }
 
         assert(div(10, 2) == 5);
-        assert(collectExceptionMsg!(Unexpected!string)(div(1, 0)) == "oops");
+        assert(collectExceptionMsg!(Unexpected!string)(cast(void) div(1, 0)) == "oops");
     }
 }
 
@@ -1299,7 +1357,7 @@ static:
     }
 
     // unchecked - throws assert
-    version (D_Exceptions) () @trusted { assertThrown!Throwable({ ok!(string, RCAbort)(42); }()); }();
+    version (D_Exceptions) () @trusted { assertThrown!Throwable({ cast(void) ok!(string, RCAbort)(42); }()); }();
 
     {
         auto res = ok!(string, RCAbort)(42);
@@ -1321,7 +1379,7 @@ static:
         assert(!def.hasError);
         assert(!ok!(string, RCAbort)(42).map!((int a) {}).hasError);
         assert(!ok!(string, RCAbort)().mapError!(e => e.length).hasError);
-        version (D_Exceptions) () @trusted { assertThrown!Throwable({ ok!(string, RCAbort)(); }()); }();
+        version (D_Exceptions) () @trusted { assertThrown!Throwable({ cast(void) ok!(string, RCAbort)(); }()); }();
     }
 
     // chaining
@@ -1331,8 +1389,8 @@ static:
     {
         () @trusted
         {
-            assertThrown!Throwable(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
-            assertThrown!Throwable(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
+            assertThrown!Throwable(cast(void) err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)));
+            assertThrown!Throwable(cast(void) ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")));
         }();
     }
 }

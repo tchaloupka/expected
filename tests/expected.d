@@ -438,7 +438,7 @@ unittest
 
     // forced check
     () @trusted {
-        version (D_Exceptions) assertThrown!Throwable({ ok!(bool, Hook)(42); }());
+        version (D_Exceptions) assertThrown!Throwable({ cast(void) ok!(bool, Hook)(42); }());
     }();
 
     //FIXME?

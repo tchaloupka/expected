@@ -27,6 +27,7 @@ Similar work is [expectations](http://code.dlang.org/packages/expectations) by P
 * allows to define `Expected` without value (`void` for `T`) - can be disabled with custom `Hook`
 * provides facility to change the `Expected` behavior by custom `Hook` implementation using the Design by introspection paradigm.
 * can enforce result check (with a cost)
+* marked with [`@mustuse`](https://dlang.org/spec/attribute.html#mustuse-attribute) so the result can't be silently discarded (on compilers supporting it, can be disabled with custom `Hook`)
 * can behave like a normal `Exception` handled code by changing the used `Hook` implementation
 * range interface
 
