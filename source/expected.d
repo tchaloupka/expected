@@ -719,11 +719,12 @@ struct Expected(T, E = string, Hook = Abort)
 
         static if (isChecked!Hook)
         {
+            // default constructed Expected!void has no storage, so there is nothing to check
             @property nothrow @safe pure @nogc
-            bool checked() const { assert(storage); return storage.checked; }
+            bool checked() const { return storage is null || storage.checked; }
 
             @property nothrow @safe pure @nogc
-            void checked(bool ch) { assert(storage); storage.checked = ch; }
+            void checked(bool ch) { if (storage) storage.checked = ch; }
         }
 
         auto ref inout(E) getError()() inout
@@ -1312,6 +1313,17 @@ static:
         assert(res.hasValue);
     }
 
+    // void value
+    {
+        assert(!ok!(string, RCAbort)().hasError);
+        assert(err!(void, RCAbort)("foo").error == "foo");
+        Expected!(void, string, RCAbort) def;
+        assert(!def.hasError);
+        assert(!ok!(string, RCAbort)(42).map!((int a) {}).hasError);
+        assert(!ok!(string, RCAbort)().mapError!(e => e.length).hasError);
+        version (D_Exceptions) () @trusted { assertThrown!Throwable({ ok!(string, RCAbort)(); }()); }();
+    }
+
     // chaining
     assert(err!(int, RCAbort)("foo").orElse!(() => ok!(string, RCAbort)(42)) == 42);
     assert(ok!(string, RCAbort)(42).andThen!(() => err!(int, RCAbort)("foo")).error == "foo");
@@ -1369,7 +1381,9 @@ Expected!(T, E, Hook) ok(E = string, Hook = Abort, T)(auto ref T value)
 /// ditto
 Expected!(void, E, Hook) ok(E = string, Hook = Abort)()
 {
-    return Expected!(void, E, Hook)();
+    auto res = Expected!(void, E, Hook)();
+    static if (isRefCountedPayloadEnabled!Hook) res.initialize(); // so the result can be checked
+    return res;
 }
 
 ///
