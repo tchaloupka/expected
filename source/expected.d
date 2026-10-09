@@ -522,6 +522,9 @@ struct Expected(T, E = string, Hook = Abort)
                 It calls hook's `onAccessEmptyValue` otherwise.
 
                 It returns `T.init` when hook doesn't provide `onAccessEmptyValue`.
+
+                Note: Value is returned by reference only when hook provides `onAccessEmptyValue`.
+                Otherwise the `T.init` fallback forces it to be returned by value (a copy).
             +/
             @property auto ref inout(T) value()() inout
             {
@@ -568,6 +571,9 @@ struct Expected(T, E = string, Hook = Abort)
             If there is no error value, it calls hook's `onAccessEmptyError`.
 
             It returns `E.init` when hook doesn't provide `onAccessEmptyError`.
+
+            Note: Error is returned by reference only when hook provides `onAccessEmptyError`.
+            Otherwise the `E.init` fallback forces it to be returned by value (a copy).
         +/
         @property auto ref inout(E) error() inout
         {
@@ -1121,6 +1127,22 @@ static:
         assertThrown!Throwable(ok(42).error);
         assertThrown!Throwable(err!int("foo").value);
     }
+}
+
+@("accessors return by ref only with access handlers")
+@safe unittest
+{
+    static struct NoHandlers {}
+
+    auto a = ok(42);
+    auto ae = err!int("foo");
+    static assert(__traits(compiles, { auto p = &a.value(); }));
+    static assert(__traits(compiles, { auto p = &ae.error(); }));
+
+    auto b = ok!(string, NoHandlers)(42);
+    auto be = err!(int, NoHandlers)("foo");
+    static assert(!__traits(compiles, { auto p = &b.value(); }));
+    static assert(!__traits(compiles, { auto p = &be.error(); }));
 }
 
 version (D_Exceptions)
@@ -1751,14 +1773,16 @@ auto ref orElse(alias pred, EX : Expected!(T, E, H), T, E, H, Args...)(
     If no expected value is present, the original error value is passed through
     unchanged, and the function is not called.
 
+    Function can return `void`, in which case $(LREF Expected) with no value is returned.
+
     Params:
         op = function called to map $(LREF Expected) value
-        hook = use another hook for mapped $(LREF Expected)
+        hook = use another hook for mapped $(LREF Expected), hook of the source $(LREF Expected) is used by default
 
     Returns:
         A new $(LREF Expected) object containing the result.
 +/
-template map(alias op, Hook = Abort)
+template map(alias op, Hook = void)
 {
     /++
         The actual `map` function.
@@ -1769,14 +1793,23 @@ template map(alias op, Hook = Abort)
     auto ref map(T, E, H)(auto ref Expected!(T, E, H) self)
         if ((is(T == void) && is(typeof(op()))) || (!is(T == void) && is(typeof(op(forwardValue!self)))))
     {
+        static if (is(Hook == void)) alias RH = H;
+        else alias RH = Hook;
+
         static if (is(T == void)) alias U = typeof(op());
         else alias U = typeof(op(forwardValue!self));
 
-        if (self.hasError) return err!(U, Hook)(forwardError!self);
+        if (self.hasError) return err!(U, RH)(forwardError!self);
         else
         {
-            static if (is(T == void)) return ok!(E, Hook)(op());
-            else return ok!(E, Hook)(op(forwardValue!self));
+            static if (is(U == void))
+            {
+                static if (is(T == void)) op();
+                else op(forwardValue!self);
+                return ok!(E, RH)();
+            }
+            else static if (is(T == void)) return ok!(E, RH)(op());
+            else return ok!(E, RH)(op(forwardValue!self));
         }
     }
 }
@@ -1799,6 +1832,33 @@ template map(alias op, Hook = Abort)
         assert(res == 21);
         static assert(is(typeof(res) == Expected!(int, string, Hook)));
     }
+
+    // keeps source hook by default
+    {
+        static struct SrcHook {}
+        static assert(is(typeof(ok!(string, SrcHook)(42).map!(a => a/2)) == Expected!(int, string, SrcHook)));
+        static assert(is(typeof(err!(int, SrcHook)("foo").map!(a => a/2)) == Expected!(int, string, SrcHook)));
+        static assert(is(typeof(ok!(string, SrcHook)().map!(() => 42)) == Expected!(int, string, SrcHook)));
+    }
+
+    // map to void
+    {
+        int calls;
+        auto res = ok(42).map!((int a) { calls += a; });
+        static assert(is(typeof(res) == Expected!(void, string, Abort)));
+        assert(!res.hasError);
+        assert(calls == 42);
+
+        auto res2 = err!int("foo").map!((int a) { calls += a; });
+        static assert(is(typeof(res2) == Expected!(void, string, Abort)));
+        assert(res2.error == "foo");
+        assert(calls == 42);
+
+        auto res3 = ok().map!(() { calls++; });
+        static assert(is(typeof(res3) == Expected!(void, string, Abort)));
+        assert(!res3.hasError);
+        assert(calls == 43);
+    }
 }
 
 /++
@@ -1809,12 +1869,12 @@ template map(alias op, Hook = Abort)
 
     Params:
         op = function called to map $(LREF Expected) error
-        hook = use another hook for mapped $(LREF Expected)
+        hook = use another hook for mapped $(LREF Expected), hook of the source $(LREF Expected) is used by default
 
     Returns:
         A new $(LREF Expected) object containing the result.
 +/
-template mapError(alias op, Hook = Abort)
+template mapError(alias op, Hook = void)
 {
     /++
         The actual `mapError` function.
@@ -1825,13 +1885,20 @@ template mapError(alias op, Hook = Abort)
     auto ref mapError(T, E, H)(auto ref Expected!(T, E, H) self)
         if (is(typeof(op(forwardError!self))))
     {
+        static if (is(Hook == void)) alias RH = H;
+        else alias RH = Hook;
+
         alias U = typeof(op(forwardError!self));
 
         static if (!is(T == void))
         {
-            if (self.hasValue) return ok!(U, Hook)(forwardValue!self);
+            if (self.hasValue) return ok!(U, RH)(forwardValue!self);
         }
-        return err!(T, Hook)(op(forwardError!self));
+        else
+        {
+            if (!self.hasError) return ok!(U, RH)();
+        }
+        return err!(T, RH)(op(forwardError!self));
     }
 }
 
@@ -1855,6 +1922,21 @@ template mapError(alias op, Hook = Abort)
         auto res2 = err!int("foo").mapError!(e => "bar", Hook);
         assert(res2.error == "bar");
         static assert(is(typeof(res2) == Expected!(int, string, Hook)));
+    }
+
+    // keeps source hook by default
+    {
+        static struct SrcHook {}
+        static assert(is(typeof(ok!(string, SrcHook)(42).mapError!(e => e.length)) == Expected!(int, size_t, SrcHook)));
+        static assert(is(typeof(err!(int, SrcHook)("foo").mapError!(e => e.length)) == Expected!(int, size_t, SrcHook)));
+    }
+
+    // void value
+    {
+        auto res = ok().mapError!(e => e.length);
+        static assert(is(typeof(res) == Expected!(void, size_t, Abort)));
+        assert(!res.hasError);
+        assert(err("foo").mapError!(e => e.length).error == 3);
     }
 }
 
